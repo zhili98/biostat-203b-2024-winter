@@ -41,28 +41,50 @@ sessionInfo()
 
 5. After this course, you can make this repository public and use it to demonstrate your skill sets on job market.
 
-**Answer:** Display the URL of my GitHub repository here. <https://github.com/zhili98/biostat-203b-2024-winter>
+**Answer:** Here is the [link](https://github.com/zhili98/biostat-203b-2024-winter) to my GitHub repository.
 
 ## Q2. Data ethics training
 
 This exercise (and later in this course) uses the [MIMIC-IV data v2.2](https://physionet.org/content/mimiciv/2.2/), a freely accessible critical care database developed by the MIT Lab for Computational Physiology. Follow the instructions at <https://mimic.mit.edu/docs/gettingstarted/> to (1) complete the CITI `Data or Specimens Only Research` course and (2) obtain the PhysioNet credential for using the MIMIC-IV data. Display the verification links to your completion report and completion certificate here. **You must complete Q2 before working on the remaining questions.** (Hint: The CITI training takes a few hours and the PhysioNet credentialing takes a couple days; do not leave it to the last minute.)
 
-**Answer** I completed the CITI training. Here is the link to my [completion report](). Here is the link to my [completion certificate]().
+**Answer** I completed the CITI training. Here is the link to my [completion report](https://www.citiprogram.org/verify/?k2082b6b5-d9bf-41b6-9485-7306ce66d0d6-60370425). Here is the link to my [completion certificate](https://www.citiprogram.org/verify/?w0aec7d2c-1d97-4282-8129-edab0a03eb56-60370425).
 
 ## Q3. Linux Shell Commands
 
 1. Make the MIMIC v2.2 data available at location `~/mimic`. 
-```{bash}
-#| eval: false
+
+**Answer:** I created a symbolic link 'mimic' to my MIMIC data folder. Here is the output of `ls -l ~/mimic/`:
+
+```{bash, eval = TRUE}
 ls -l ~/mimic/
 ```
+
 Refer to the documentation <https://physionet.org/content/mimiciv/2.2/> for details of data files. Please, do **not** put these data files into Git; they are big. Do **not** copy them into your directory. Do **not** decompress the gz data files. These create unnecessary big files and are not big-data-friendly practices. Read from the data folder `~/mimic` directly in following exercises. 
 
   Use Bash commands to answer following questions.
 
 2. Display the contents in the folders `hosp` and `icu` using Bash command `ls -l`. Why are these data files distributed as `.csv.gz` files instead of `.csv` (comma separated values) files? Read the page <https://mimic.mit.edu/docs/iv/> to understand what's in each folder.
 
+**Answer:** 
+
+```{bash, eval = TRUE}
+ls -l ~/mimic/hosp/
+ls -l ~/mimic/icu/
+```
+
+These data files were distributed as `.csv.gz` files instead of `.csv` files because in Ubuntu, `.gz` files are compressed by `gzip` program and take up less space.
+
 3. Briefly describe what Bash commands `zcat`, `zless`, `zmore`, and `zgrep` do.
+
+**Answer:** 
+
+- `zcat` is used to print data from gzip compressed files.
+
+- `zless` is used to view the contents of a compressed file. It allows user to navigate both forward and backward as well as search for specific patterns.
+
+- `zmore` is also used to view the contents of a compressed file but is a more primitive version of `zless`. It only allows user to navigate forward not backward.
+
+- `zgrep` is used to search for a specific pattern in a compressed file.
 
 4. (Looping in Bash) What's the output of the following bash script?
 ```{bash}
@@ -74,11 +96,142 @@ done
 ```
 Display the number of lines in each data file using a similar loop. (Hint: combine linux commands `zcat <` and `wc -l`.)
 
+**Answer:** The output of the above bash script is:  
+
+```{bash, eval = FALSE}
+-rwxrwxrwx 1 zhili zhili 15516088 Jan  5  2023 /home/zhili/mimic/hosp/admissions.csv.gz
+-rwxrwxrwx 1 zhili zhili 1939088924 Jan  5  2023 /home/zhili/mimic/hosp/labevents.csv.gz
+-rwxrwxrwx 1 zhili zhili 2312631 Jan  5  2023 /home/zhili/mimic/hosp/patients.csv.gz
+```
+
+The numbers of lines in each data file are `431,232`, `118,171,368`, and `299,713` for `admissions.csv.gz`, `labevents.csv.gz`, and `patients.csv.gz` respectively. 
+
+```{bash, eval = FALSE}
+
+for datafile in ~/mimic/hosp/{a,l,pa}*.gz
+do
+  zcat < $datafile | wc -l
+done
+```
+
+
 5. Display the first few lines of `admissions.csv.gz`. How many rows are in this data file? How many unique patients (identified by `subject_id`) are in this data file? Do they match the number of patients listed in the `patients.csv.gz` file? (Hint: combine Linux commands `zcat <`, `head`/`tail`, `awk`, `sort`, `uniq`, `wc`, and so on.)
+
+**Answer:** 
+
+There are `431,233` rows in this data file. There are `180,733` unique patients in this data file. They do not match the number of patients listed in the `patients.csv.gz` file which is `299,712`.
+
+
+```{bash, eval = TRUE}
+zcat ~/mimic/hosp/admissions.csv.gz | head -n 5
+zcat ~/mimic/hosp/admissions.csv.gz | wc -l
+zcat ~/mimic/hosp/admissions.csv.gz | awk -F ',' '{print $1}' | sort | head --lines -1 | uniq | wc -l
+zcat ~/mimic/hosp/patients.csv.gz | awk -F ',' '{print$1}' | sort | head --lines -1 | uniq | wc -l
+```
+
 
 6. What are the possible values taken by each of the variable `admission_type`, `admission_location`, `insurance`, and `ethnicity`? Also report the count for each unique value of these variables. (Hint: combine Linux commands `zcat`, `head`/`tail`, `awk`, `uniq -c`, `wc`, and so on; skip the header line.)
 
+**Answer:**
+
+- `admission_type`:
+
+   6626 AMBULATORY OBSERVATION  
+  19554 DIRECT EMER.  
+  18707 DIRECT OBSERVATION  
+  10565 ELECTIVE  
+  94776 EU OBSERVATION  
+ 149413 EW EMER.  
+  52668 OBSERVATION ADMIT  
+  34231 SURGICAL SAME DAY ADMISSION  
+  44691 URGENT  
+
+- `admission_location`: 
+
+    185 AMBULATORY SURGERY TRANSFER  
+  10008 CLINIC REFERRAL  
+ 232595 EMERGENCY ROOM  
+    359 INFORMATION NOT AVAILABLE  
+   4205 INTERNAL TRANSFER TO OR FROM PSYCH  
+   5479 PACU  
+ 114963 PHYSICIAN REFERRAL  
+   7804 PROCEDURE SITE  
+  35974 TRANSFER FROM HOSPITAL  
+   3843 TRANSFER FROM SKILLED NURSING FACILITY  
+  15816 WALK-IN/SELF REFERRAL  
+
+- `insurance`:
+
+  41330 Medicaid  
+ 160560 Medicare  
+ 229341 Other  
+
+- `race`:
+
+    919 AMERICAN INDIAN/ALASKA NATIVE
+   6156 ASIAN  
+   1198 ASIAN - ASIAN INDIAN  
+   5587 ASIAN - CHINESE  
+    506 ASIAN - KOREAN  
+   1446 ASIAN - SOUTH EAST ASIAN  
+   2530 BLACK/AFRICAN  
+  59959 BLACK/AFRICAN AMERICAN  
+   4765 BLACK/CAPE VERDEAN  
+   2704 BLACK/CARIBBEAN ISLAND  
+   7754 HISPANIC OR LATINO  
+    437 HISPANIC/LATINO - CENTRAL AMERICAN  
+    639 HISPANIC/LATINO - COLUMBIAN  
+    500 HISPANIC/LATINO - CUBAN  
+   4383 HISPANIC/LATINO - DOMINICAN  
+   1330 HISPANIC/LATINO - GUATEMALAN  
+    536 HISPANIC/LATINO - HONDURAN  
+    665 HISPANIC/LATINO - MEXICAN  
+   8076 HISPANIC/LATINO - PUERTO RICAN  
+    892 HISPANIC/LATINO - SALVADORAN  
+    560 MULTIPLE RACE/ETHNICITY  
+    386 NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER  
+  15102 OTHER  
+   1761 PATIENT DECLINED TO ANSWER  
+   1510 PORTUGUESE  
+    505 SOUTH AMERICAN  
+   1603 UNABLE TO OBTAIN  
+  10668 UNKNOWN  
+ 272932 WHITE  
+   1103 WHITE - BRAZILIAN  
+   1170 WHITE - EASTERN EUROPEAN  
+   7925 WHITE - OTHER EUROPEAN  
+   5024 WHITE - RUSSIAN   
+
+```{bash, eval = FALSE}
+zcat ~/mimic/hosp/admissions.csv.gz | awk -F ',' '{print $6}' | sort | uniq -c
+zcat ~/mimic/hosp/admissions.csv.gz | awk -F ',' '{print $8}' | sort | uniq -c
+zcat ~/mimic/hosp/admissions.csv.gz | awk -F ',' '{print $10}' | sort | uniq -c
+zcat ~/mimic/hosp/admissions.csv.gz | awk -F ',' '{print $13}' | sort | uniq -c
+```
+
+
 7. _To compress, or not to compress. That's the question._ Let's focus on the big data file `labevents.csv.gz`. Compare compressed gz file size to the uncompressed file size. Compare the run times of `zcat < ~/mimic/labevents.csv.gz | wc -l` versus `wc -l labevents.csv`. Discuss the trade off between storage and speed for big data files. (Hint: `gzip -dk < FILENAME.gz > ./FILENAME`. Remember to delete the large `labevents.csv` file after the exercise.)
+
+**Answer:**
+
+- The compressed file size is 1.9G and the uncompressed file size is 13G. The run time of `zcat < ~/mimic/labevents.csv.gz | wc -l` is 57.487s where `user` time is 45.442s and `sys` time is 8.635s, indicating that the majority of the time is spent on decompression, calculation and system-level operations. 
+
+- On the other hand, the run time of `wc -l labevents.csv` is 1 minute and 17.981 seconds where `user` time is 1.839s and `sys` time is 5.657s, indicating that the majority of the time is spent on I/O operations, which is reading files from the disk. Even the total of `user` time and `sys` time is apparently smaller for `wc -l labevents.csv`, the total run time is longer due to its large size(13G) compared to the compressed file(1.9G).
+
+- In a more general sense, the trade off between storage and speed for big data files is that the compressed file takes up less space but takes longer to decompress and read, while the uncompressed file takes up more space but takes less time to read.
+
+```{bash, eval = FALSE}
+gzip -dk < ~/mimic/hosp/labevents.csv.gz > ~/mimic/hosp/labevents.csv
+```
+
+```{bash, eval = FALSE}
+ls -lh ~/mimic/hosp | grep labevents | awk -F ' ' '{print $9 ":" $5}'
+```
+
+```{bash, eval = FALSE}
+time zcat < ~/mimic/hosp/labevents.csv.gz | wc -l
+time wc -l ~/mimic/hosp/labevents.csv
+```
 
 ## Q4. Who's popular in Price and Prejudice
 
@@ -88,13 +241,21 @@ Display the number of lines in each data file using a similar loop. (Hint: combi
 wget -nc http://www.gutenberg.org/cache/epub/42671/pg42671.txt
 ```
 Explain what `wget -nc` does. Do **not** put this text file `pg42671.txt` in Git. Complete the following loop to tabulate the number of times each of the four characters is mentioned using Linux commands.
-```{bash}
+
+**Answer:** The flag `-nc` for `wget` means that it will not download the file if it already exists in the current directory.  
+The frequency that each character is mentioned is as follows:  
+Elizabeth:\ 634  
+Jane:\ 293  
+Lydia:\ 170  
+Darcy:\ 417  
+
+```{bash, eval = FALSE}
 #| eval: false
 wget -nc http://www.gutenberg.org/cache/epub/42671/pg42671.txt
 for char in Elizabeth Jane Lydia Darcy
 do
   echo $char:
-  # some bash commands here
+  cat pg42671.txt | grep -o $char | wc -l
 done
 ```
 
@@ -108,6 +269,8 @@ and
 #| eval: false
 echo 'hello, world' >> test2.txt
 ```
+
+**Answer:** The single angle bracket `>` will overwrite the file if it already exists, while the double angle bracket `>>` will append the output to the end of the file if it already exists.
 
 3. Using your favorite text editor (e.g., `vi`), type the following and save the file as `middle.sh`:
 ```{bash eval=FALSE}
@@ -123,9 +286,63 @@ Using `chmod` to make the file executable by the owner, and run
 ```
 Explain the output. Explain the meaning of `"$1"`, `"$2"`, and `"$3"` in this shell script. Why do we need the first line of the shell script?
 
+**Answer:**  
+The output is the 5 lines from line 16 to line 20 of the file `pg42671.txt`. The script first takes the first 20 lines of the file `pg42671.txt` and then pipes it to 'tail' -n5 which takes the last 5 lines of the first 20 lines.
+
+- `"$1"` is the first argument of the shell script, which is the file name.  
+
+- `"$2"` is the second argument of the shell script, which is the number of lines we want the 'head' program to print.  
+
+- `"$3"` is the third argument of the shell script, which is the number of lines we want the 'tail' program to print.
+
+- The `#!` at the beginning of the script is called a shebang. The path following it tells the shell which interpreter to use to execute the script. In this case, it is `#!/bin/sh` which means the Bourne shell.
+
+```{bash, eval = FALSE}
+zhili@Kisenon:~/203b-hw/hw1$ ./middle.sh pg42671.txt 20 5
+Editor: R. W. Chapman
+
+Release date: May 9, 2013 [eBook #42671]
+
+Language: English
+```
+
 ## Q5. More fun with Linux
 
 Try following commands in Bash and interpret the results: `cal`, `cal 2024`, `cal 9 1752` (anything unusual?), `date`, `hostname`, `arch`, `uname -a`, `uptime`, `who am i`, `who`, `w`, `id`, `last | head`, `echo {con,pre}{sent,fer}{s,ed}`, `time sleep 5`, `history | tail`.
+
+**Answer:** 
+
+- `cal`: display the calendar for the current month.
+
+- `cal 2024`: display the calendar for the year 2024.
+
+- `cal 9 1752`: display the calendar for September 1752. Dates from September 3rd to September 13th are missing in this calendar.
+
+- `date`: display the current date and PST time.
+
+- `hostname`: display the name of the host.
+
+- `arch`: display the architecture of the CPU.
+
+- `uname -a`: display the current system information.
+
+- `uptime`: display the current time, how long the system has been running, how many users are currently logged on, and the system load averages for the past 1, 5, and 15 minutes.
+
+- `who am i`: display the current user.
+
+- `who`: display the users currently logged in.
+
+- `w`: display who is logged in and their processes.
+
+- `id`: display the user and group IDs of the current user.
+
+- `last | head`: display the last 10 logins.
+
+- `echo {con,pre}{sent,fer}{s,ed}`: retrieve and combine the elements from all three pairs of curly brackets recursively and print them out.
+
+- `time sleep 5`: display the time it takes to run the command `sleep 5`. `sleep` delays for a specified amount of time.
+
+- `history | tail`: display the last 10 commands run in the past.
 
 ## Q6. Book
 
@@ -136,3 +353,7 @@ Try following commands in Bash and interpret the results: `cal`, `cal 2024`, `ca
 The point of this exercise is (1) to get the book for free and (2) to see an example how a complicated project such as a book can be organized in a reproducible way.
 
 For grading purpose, include a screenshot of Section 4.1.5 of the book here.
+
+**Answer:** Here is the screenshot of Section 4.1.5 of the book:
+
+![Section 4.1.5](./book4.1.5.png)
