@@ -119,7 +119,7 @@ done
 
 **Answer:** 
 
-There are `431,233` rows in this data file. There are `180,733` unique patients in this data file. They do not match the number of patients listed in the `patients.csv.gz` file which is `299,712`.
+There are `431,232` rows in this data file. There are `180,733` unique patients in this data file. They do not match the number of patients listed in the `patients.csv.gz` file which is `299,712`.
 
 
 ```{bash, eval = TRUE}
