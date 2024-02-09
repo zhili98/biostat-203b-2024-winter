@@ -1,0 +1,342 @@
+---
+title: "Biostat 203B Homework 2"
+subtitle: Due Feb 9 @ 11:59PM
+author: "Zhi Li, UID: 506333161"
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: false
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+knitr:
+  opts_chunk: 
+    cache: false    
+    echo: true
+    fig.align: 'center'
+    fig.width: 6
+    fig.height: 4
+    message: FALSE
+execute:
+  eval: false    
+---
+
+Display machine information for reproducibility:
+```{r}
+sessionInfo()
+```
+
+Load necessary libraries (you can add more as needed).
+```{r, eval = TRUE}
+library(arrow)
+library(data.table)
+library(memuse)
+library(pryr)
+library(R.utils)
+library(tidyverse)
+library(readr)
+library(dplyr)
+```
+
+Display memory information of your computer
+```{r, eval = TRUE}
+memuse::Sys.meminfo()
+```
+
+In this exercise, we explore various tools for ingesting the [MIMIC-IV](https://mimic.mit.edu/docs/iv/) data introduced in [homework 1](https://ucla-biostat-203b.github.io/2024winter/hw/hw1/hw1.html).
+
+Display the contents of MIMIC `hosp` and `icu` data folders:
+
+```{bash, eval = TRUE}
+ls -l ~/mimic/hosp/
+```
+
+```{bash, eval = TRUE}
+ls -l ~/mimic/icu/
+```
+
+## Q1. `read.csv` (base R) vs `read_csv` (tidyverse) vs `fread` (data.table)
+
+### Q1.1 Speed, memory, and data types
+
+There are quite a few utilities in R for reading plain text data files. Let us test the speed of reading a moderate sized compressed csv file, `admissions.csv.gz`, by three functions: `read.csv` in base R, `read_csv` in tidyverse, and `fread` in the data.table package.
+
+Which function is fastest? Is there difference in the (default) parsed data types? How much memory does each resultant dataframe or tibble use? (Hint: `system.time` measures run times; `pryr::object_size` measures memory usage.) 
+
+**Answer:** 
+
+- `fread` is the fastest which used **0.747s** in total, `read_csv` is the second with **0.846s** of total time elapsed, and `read.csv` is the slowest which consumed **2.598s** in total.
+
+- The default parsed data types are different. Both `fread` and `read_csv` treated time related variables as `date-time` abbreviated as `<dttm>` in the output, while `read.csv` treated them as `character` abbreviated as `<chr>` in the output. On the other hand, `read.csv` and `fread` treated the numeric variables as `integer, while `read_csv` treated them as `double`.
+
+- `fread` took up the least memory of about **50MB**, followed by `read_csv` with around **55MB** of memory, and `read.csv` took up the most memory which is about **158.7MB**.
+
+```{r, eval = FALSE}
+system.time({
+  admissions1 <- read.csv("~/mimic/hosp/admissions.csv.gz")
+})
+system.time({
+  admissions2 <- read_csv("~/mimic/hosp/admissions.csv.gz")
+})
+system.time({
+  admissions3 <- fread("~/mimic/hosp/admissions.csv.gz")
+})
+
+as_tibble(admissions1)
+as_tibble(admissions2)
+as_tibble(admissions3)
+
+pryr::object_size(admissions1)
+pryr::object_size(admissions2)
+pryr::object_size(admissions3)
+```
+
+### Q1.2 User-supplied data types
+
+Re-ingest `admissions.csv.gz` by indicating appropriate column data types in `read_csv`. Does the run time change? How much memory does the result tibble use? (Hint: `col_types` argument in `read_csv`.)
+
+**Answer:** The run time decreased from **0.846s** to **0.706s**, and the memory usage shrank from **55MB** to **38.06MB**.
+
+```{r, eval = TRUE}
+system.time({
+  admissions_user <- read_csv("~/mimic/hosp/admissions.csv.gz", 
+                              col_types = cols(
+                                subject_id = col_integer(),
+                                hadm_id = col_integer(),
+                                admission_type = col_factor(),
+                                admission_location = col_factor(),
+                                discharge_location = col_factor(),
+                                insurance = col_factor(),
+                                language = col_factor(),
+                                marital_status = col_factor(),
+                                race = col_factor(),
+                                hospital_expire_flag = col_logical()
+                                )
+                            )
+})
+pryr::object_size(admissions_user)
+```
+
+
+## Q2. Ingest big data files
+
+<p align="center">
+  <img src="./bigfile.png" width="50%">
+</p>
+
+Let us focus on a bigger file, `labevents.csv.gz`, which is about 125x bigger than `admissions.csv.gz`.
+```{bash}
+ls -hl ~/mimic/hosp/labevents.csv.gz
+```
+Display the first 10 lines of this file.
+```{bash}
+zcat < ~/mimic/hosp/labevents.csv.gz | head -10
+```
+
+### Q2.1 Ingest `labevents.csv.gz` by `read_csv`
+
+<p align="center">
+  <img src="./readr_logo.png" width="20%">
+</p>
+
+Try to ingest `labevents.csv.gz` using `read_csv`. What happens? If it takes more than 5 minutes on your computer, then abort the program and report your findings. 
+
+**Answer:**  The `read_csv` function took more than 5 minutes on my computer. There was not an error pane while the code just kept running and no result was generated. I assigned 24GB out of 32GB of RAM to WSL2 (16GB by default), but still the memory usage increased to 100% when I tried to ingest `labevents.csv.gz` using `read_csv`. As Dr.Zhou mentioned in class, this might be a result of the `read_csv` function trying to read the entire file into memory at once, which is not feasible for a file of this size.
+
+```{r, eval = FALSE}
+labevents <- read_csv("~/mimic/hosp/labevents.csv.gz")
+```
+
+### Q2.2 Ingest selected columns of `labevents.csv.gz` by `read_csv`
+
+Try to ingest only columns `subject_id`, `itemid`, `charttime`, and `valuenum` in `labevents.csv.gz` using `read_csv`.  Does this solve the ingestion issue? (Hint: `col_select` argument in `read_csv`.)
+
+**Answer:** The data was successfully read into R session. A total time of **3 minutes** was elapsed. This might be due to the data that `read_csv` was trying to read in was subsetted such that it was small enough to fit into the RAM.
+
+```{r, eval = FALSE}
+labevents_sub <- read_csv("~/mimic/hosp/labevents.csv.gz", 
+                          col_select = c("subject_id", "itemid",
+                                         "charttime", "valuenum"))
+```
+
+
+
+### Q2.3 Ingest subset of `labevents.csv.gz`
+
+<p align="center">
+  <img src="./linux_logo.png" width="20%">
+</p>
+
+Our first strategy to handle this big data file is to make a subset of the `labevents` data.  Read the [MIMIC documentation](https://mimic.mit.edu/docs/iv/modules/hosp/labevents/) for the content in data file `labevents.csv`.
+
+In later exercises, we will only be interested in the following lab items: creatinine (50912), potassium (50971), sodium (50983), chloride (50902), bicarbonate (50882), hematocrit (51221), white blood cell count (51301), and glucose (50931) and the following columns: `subject_id`, `itemid`, `charttime`, `valuenum`. Write a Bash command to extract these columns and rows from `labevents.csv.gz` and save the result to a new file `labevents_filtered.csv.gz` in the current working directory. (Hint: use `zcat <` to pipe the output of `labevents.csv.gz` to `awk` and then to `gzip` to compress the output. To save render time, put `#| eval: false` at the beginning of this code chunk.)
+
+Display the first 10 lines of the new file `labevents_filtered.csv.gz`. How many lines are in this new file? How long does it take `read_csv` to ingest `labevents_filtered.csv.gz`?
+
+**Answer:** It took approximately **110 seconds** to ingest `labevents_filtered.csv.gz` using `read_csv`. The new file `labevents_filtered.csv.gz` contains **24,855,909** lines.
+
+```{bash, eval = FALSE}
+zcat < ~/mimic/hosp/labevents.csv.gz | awk -F ',' '($5 == 50912 ||\
+$5 == 50971 || $5 == 50983 || $5 == 50902 || $5 == 50882 || $5 == 51221 ||\
+$5 == 51301 || $5 == 50931) {print $2","$5","$7","$10}' |\
+gzip > labevents_filtered.csv.gz
+```
+
+```{bash, eval = TRUE}
+zcat < labevents_filtered.csv.gz | head -10
+zcat < labevents_filtered.csv.gz | wc -l
+```
+
+### Q2.4 Ingest `labevents.csv` by Apache Arrow
+
+<p align="center">
+  <img src="./arrow_logo.png" width="30%">
+</p>
+
+Our second strategy is to use [Apache Arrow](https://arrow.apache.org/) for larger-than-memory data analytics. Unfortunately Arrow does not work with gz files directly. First decompress `labevents.csv.gz` to `labevents.csv` and put it in the current working directory. To save render time, put `#| eval: false` at the beginning of this code chunk.
+
+Then use [`arrow::open_dataset`](https://arrow.apache.org/docs/r/reference/open_dataset.html) to ingest `labevents.csv`, select columns, and filter `itemid` as in Q2.3. How long does the ingest+select+filter process take? Display the number of rows and the first 10 rows of the result tibble, and make sure they match those in Q2.3. (Hint: use `dplyr` verbs for selecting columns and filtering rows.)
+
+Write a few sentences to explain what is Apache Arrow. Imagine you want to explain it to a layman in an elevator. 
+
+**Answer:** 
+
+- The ingest+select+filter process took approximately **0.02 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **17 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
+
+- The `Apache Arrow` is an in-memory data format that can work with a variety of programming languages to transport data between systems at a very low cost. It can avoid unnecessary data serialization and deserialization processes that cost a lot of time and resources by organizing data in a columnar format in memory.
+
+- _P.S. Screenshots included are used to show results from which I got the numbers, since rendered file might appear slightly different from the first time I ran the code._
+
+![Dimensions of the result tibble](./q2.4.1.png)
+![First 10 rows of the result tibble](./q2.4.2.png)
+
+```{bash, eval = FALSE}
+gzip -dk ~/mimic/hosp/labevents.csv.gz
+```
+
+```{r, eval = TRUE}
+system.time({
+  labevents_arrow <- arrow::open_csv_dataset("labevents.csv") %>%
+  select(subject_id, itemid, charttime, valuenum) %>%
+  filter(itemid %in% c(50912, 50971, 50983, 50902, 50882, 51221, 51301, 50931))
+})
+
+system.time({
+  labevents_tbbl <- labevents_arrow %>% collect()
+})
+
+dim(labevents_tbbl)
+head(labevents_tbbl, 10)
+```
+
+### Q2.5 Compress `labevents.csv` to Parquet format and ingest/select/filter
+
+<p align="center">
+  <img src="./parquet_logo.png" width="30%">
+</p>
+
+Re-write the csv file `labevents.csv` in the binary Parquet format (Hint: [`arrow::write_dataset`](https://arrow.apache.org/docs/r/reference/write_dataset.html).) How large is the Parquet file(s)? How long does the ingest+select+filter process of the Parquet file(s) take? Display the number of rows and the first 10 rows of the result tibble and make sure they match those in Q2.3. (Hint: use `dplyr` verbs for selecting columns and filtering rows.)
+
+Write a few sentences to explain what is the Parquet format. Imagine you want to explain it to a layman in an elevator.
+
+**Answer:** 
+
+- The Parquet file is about **1.9GB** in size. The ingest+select+filter process of the Parquet file took approximately **0.15 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **2.7 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
+
+- The Parquet format is a columnar storage format that is optimized for reading and writing large data sets. It is designed to be efficient for both storage and processing, and it is especially good for complex data types and nested data structures. Files stored in the Parquet format are highly compressed and can be read and written in parallel, which makes them ideal for big data applications.
+
+- _P.S. Screenshots included are used to show results from which I got the numbers, since rendered file might appear slightly different from the first time I ran the code._
+
+![Dimensions of the result tibble](./q2.5.1.png)
+![First 10 rows of the result tibble](./q2.5.2.png)
+
+```{r, eval = FALSE}
+arrow::open_csv_dataset("labevents.csv") %>%
+arrow::write_dataset(format = "parquet", path = "./labevents.parquet")
+```
+
+```{r, eval = TRUE}
+system.time({
+  labevents_pqt <- arrow::open_dataset("labevents.parquet") %>%
+  select(subject_id, itemid, charttime, valuenum) %>%
+  filter(itemid %in% c(50912, 50971, 50983, 50902, 50882, 51221, 51301, 50931))
+})
+
+system.time({
+  labevents_pqt_tbbl <- labevents_pqt %>% collect()
+})
+
+dim(labevents_pqt_tbbl)
+head(labevents_pqt_tbbl, 10)
+```
+
+### Q2.6 DuckDB
+
+<p align="center">
+  <img src="./duckdb_logo.png" width="20%">
+</p>
+
+Ingest the Parquet file, convert it to a DuckDB table by [`arrow::to_duckdb`](https://arrow.apache.org/docs/r/reference/to_duckdb.html), select columns, and filter rows as in Q2.5. How long does the ingest+convert+select+filter process take? Display the number of rows and the first 10 rows of the result tibble and make sure they match those in Q2.3. (Hint: use `dplyr` verbs for selecting columns and filtering rows.)
+
+Write a few sentences to explain what is DuckDB. Imagine you want to explain it to a layman in an elevator.
+
+**Answer:**
+
+- The ingest+convert+select+filter process took approximately **0.17 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
+
+- DuckDB is an in-memory database management system designed primarily for analytical query workloads. It is embeddable, meaning it can be easily integrated into other applications like R and Python. DuckDB processes data in memory and stores data in a columnar format, which makes it very efficient for analytical queries.
+
+- _P.S. Screenshots included are used to show results from which I got the numbers, since rendered file might appear slightly different from the first time I ran the code._
+
+![Dimensions of the result tibble](./q2.6.1.png)
+![First 10 rows of the result tibble](./q2.6.2.png)
+
+```{r, eval = TRUE}
+library(duckdb)
+system.time({
+  labevents_pqt_duckdb <- arrow::open_dataset("labevents.parquet") %>%
+  arrow::to_duckdb(table = "labevents_pqt_duckdb") %>%
+  select(subject_id, itemid, charttime, valuenum) %>%
+  filter(itemid %in% c(50912, 50971, 50983, 50902, 50882, 51221, 51301, 50931))
+})
+
+labevents_pqt_duckdb <- labevents_pqt_duckdb %>% 
+                        arrange(subject_id, charttime) %>%
+                        as_tibble()
+
+dim(labevents_pqt_duckdb)
+head(labevents_pqt_duckdb, 10)
+```
+
+## Q3. Ingest and filter `chartevents.csv.gz`
+
+[`chartevents.csv.gz`](https://mimic.mit.edu/docs/iv/modules/icu/chartevents/) contains all the charted data available for a patient. During their ICU stay, the primary repository of a patient’s information is their electronic chart. The `itemid` variable indicates a single measurement type in the database. The `value` variable is the value measured for `itemid`. The first 10 lines of `chartevents.csv.gz` are
+```{bash, eval = TRUE}
+zcat < ~/mimic/icu/chartevents.csv.gz | head -10
+```
+[`d_items.csv.gz`](https://mimic.mit.edu/docs/iv/modules/icu/d_items/) is the dictionary for the `itemid` in `chartevents.csv.gz`.
+```{bash, eval = TRUE}
+zcat < ~/mimic/icu/d_items.csv.gz | head -10
+```
+In later exercises, we are interested in the vitals for ICU patients: heart rate (220045), mean non-invasive blood pressure (220181), systolic non-invasive blood pressure (220179), body temperature in Fahrenheit (223761), and respiratory rate (220210). Retrieve a subset of `chartevents.csv.gz` only containing these items, using the favorite method you learnt in Q2. 
+
+Document the steps and show code. Display the number of rows and the first 10 rows of the result tibble.
+
+**Answer:** There are **22,502,319** rows in the filtered tibble. The first 10 rows of the result tibble are displayed below.
+
+
+```{bash, eval = FALSE}
+gzip -dk ~/mimic/icu/chartevents.csv.gz
+```
+
+```{r, eval = TRUE}
+chartevents_fltr <- arrow::open_csv_dataset("chartevents.csv") %>%
+                    filter(itemid %in% c(220045, 220181, 220179, 223761,
+                                         220210)) %>%
+                    collect()
+
+dim(chartevents_fltr)
+head(chartevents_fltr, 10)
+```
