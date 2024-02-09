@@ -67,11 +67,11 @@ Which function is fastest? Is there difference in the (default) parsed data type
 
 **Answer:** 
 
-- `fread` is the fastest which used 0.747s in total, `read_csv` is the second with 0.846s of total time elapsed, and `read.csv` is the slowest which consumed 2.598s in total.
+- `fread` is the fastest which used **0.747s** in total, `read_csv` is the second with **0.846s** of total time elapsed, and `read.csv` is the slowest which consumed **2.598s** in total.
 
 - The default parsed data types are different. Both `fread` and `read_csv` treated time related variables as `date-time` abbreviated as `<dttm>` in the output, while `read.csv` treated them as `character` abbreviated as `<chr>` in the output. On the other hand, `read.csv` and `fread` treated the numeric variables as `integer, while `read_csv` treated them as `double`.
 
-- `fread` took up the least memory of about 50MB, followed by `read_csv` with around 55MB of memory, and `read.csv` took up the most memory which is about 158.7MB.
+- `fread` took up the least memory of about **50MB**, followed by `read_csv` with around **55MB** of memory, and `read.csv` took up the most memory which is about **158.7MB**.
 
 ```{r, eval = FALSE}
 system.time({
@@ -97,7 +97,7 @@ pryr::object_size(admissions3)
 
 Re-ingest `admissions.csv.gz` by indicating appropriate column data types in `read_csv`. Does the run time change? How much memory does the result tibble use? (Hint: `col_types` argument in `read_csv`.)
 
-**Answer:** The run time decreased from 0.846s to 0.706s, and the memory usage shrank from 55MB to 38.06MB.
+**Answer:** The run time decreased from **0.846s** to **0.706s**, and the memory usage shrank from **55MB** to **38.06MB**.
 
 ```{r, eval = TRUE}
 system.time({
@@ -143,7 +143,7 @@ zcat < ~/mimic/hosp/labevents.csv.gz | head -10
 
 Try to ingest `labevents.csv.gz` using `read_csv`. What happens? If it takes more than 5 minutes on your computer, then abort the program and report your findings. 
 
-**Answer:**  The `read_csv` function took more than 5 minutes on my computer. I assigned 24GB out of 32GB of RAM to WSL2 (16GB by default), but still the memory usage increased to 100% when I tried to ingest `labevents.csv.gz` using `read_csv`. As Dr.Zhou mentioned in class, this might be a result of the `read_csv` function trying to read the entire file into memory at once, which is not feasible for a file of this size.
+**Answer:**  The `read_csv` function took more than 5 minutes on my computer. There was not an error pane while the code just kept running and no result was generated. I assigned 24GB out of 32GB of RAM to WSL2 (16GB by default), but still the memory usage increased to 100% when I tried to ingest `labevents.csv.gz` using `read_csv`. As Dr.Zhou mentioned in class, this might be a result of the `read_csv` function trying to read the entire file into memory at once, which is not feasible for a file of this size.
 
 ```{r, eval = FALSE}
 labevents <- read_csv("~/mimic/hosp/labevents.csv.gz")
@@ -153,7 +153,7 @@ labevents <- read_csv("~/mimic/hosp/labevents.csv.gz")
 
 Try to ingest only columns `subject_id`, `itemid`, `charttime`, and `valuenum` in `labevents.csv.gz` using `read_csv`.  Does this solve the ingestion issue? (Hint: `col_select` argument in `read_csv`.)
 
-**Answer:** The data was successfully read into R session. A total time of 3 minutes was elapsed. This might be due to the data that `read_csv` was trying to read in was subsetted such that it was small enough to fit into the RAM.
+**Answer:** The data was successfully read into R session. A total time of **3 minutes** was elapsed. This might be due to the data that `read_csv` was trying to read in was subsetted such that it was small enough to fit into the RAM.
 
 ```{r, eval = FALSE}
 labevents_sub <- read_csv("~/mimic/hosp/labevents.csv.gz", 
@@ -203,7 +203,7 @@ Write a few sentences to explain what is Apache Arrow. Imagine you want to expla
 
 **Answer:** 
 
-- The ingest+select+filter process took approximately **0.02 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **17 seconds**. There are 24,855,909 rows in the result tibble, the first 10 rows of which are displayed below.
+- The ingest+select+filter process took approximately **0.02 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **17 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
 
 - The `Apache Arrow` is an in-memory data format that can work with a variety of programming languages to transport data between systems at a very low cost. It can avoid unnecessary data serialization and deserialization processes that cost a lot of time and resources by organizing data in a columnar format in memory.
 
@@ -241,7 +241,7 @@ Write a few sentences to explain what is the Parquet format. Imagine you want to
 
 **Answer:** 
 
-- The Parquet file is about 1.9GB in size. The ingest+select+filter process of the Parquet file took approximately **0.15 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **2.7 seconds**. There are 24,855,909 rows in the result tibble, the first 10 rows of which are displayed below.
+- The Parquet file is about **1.9GB** in size. The ingest+select+filter process of the Parquet file took approximately **0.15 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **2.7 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
 
 - The Parquet format is a columnar storage format that is optimized for reading and writing large data sets. It is designed to be efficient for both storage and processing, and it is especially good for complex data types and nested data structures. Files stored in the Parquet format are highly compressed and can be read and written in parallel, which makes them ideal for big data applications.
 
@@ -280,7 +280,7 @@ Write a few sentences to explain what is DuckDB. Imagine you want to explain it 
 
 **Answer:**
 
-- The ingest+convert+select+filter process took approximately **0.17 seconds**. There are 24,855,909 rows in the result tibble, the first 10 rows of which are displayed below.
+- The ingest+convert+select+filter process took approximately **0.17 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
 
 - DuckDB is an in-memory database management system designed primarily for analytical query workloads. It is embeddable, meaning it can be easily integrated into other applications like R and Python. DuckDB processes data in memory and stores data in a columnar format, which makes it very efficient for analytical queries.
 
@@ -318,7 +318,7 @@ In later exercises, we are interested in the vitals for ICU patients: heart rate
 
 Document the steps and show code. Display the number of rows and the first 10 rows of the result tibble.
 
-**Answer:** There are 22,502,319 rows in the filtered tibble. The first 10 rows of the result tibble are displayed below.
+**Answer:** There are **22,502,319** rows in the filtered tibble. The first 10 rows of the result tibble are displayed below.
 
 ![Dimensions of the result tibble](./q3.1.png)
 ![First 10 rows of the result tibble](./q3.2.1.png)
