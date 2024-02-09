@@ -207,6 +207,8 @@ Write a few sentences to explain what is Apache Arrow. Imagine you want to expla
 
 - The `Apache Arrow` is an in-memory data format that can work with a variety of programming languages to transport data between systems at a very low cost. It can avoid unnecessary data serialization and deserialization processes that cost a lot of time and resources by organizing data in a columnar format in memory.
 
+- _P.S. Screenshots included are used to show results from which I got the numbers, since rendered file might appear slightly different from the first time I ran the code._
+
 ![Dimensions of the result tibble](./q2.4.1.png)
 ![First 10 rows of the result tibble](./q2.4.2.png)
 
@@ -244,6 +246,8 @@ Write a few sentences to explain what is the Parquet format. Imagine you want to
 - The Parquet file is about **1.9GB** in size. The ingest+select+filter process of the Parquet file took approximately **0.15 seconds**, and the conversion from an `arrow dataset` to a `tibble` took approximately **2.7 seconds**. There are **24,855,909** rows in the result tibble, the first 10 rows of which are displayed below.
 
 - The Parquet format is a columnar storage format that is optimized for reading and writing large data sets. It is designed to be efficient for both storage and processing, and it is especially good for complex data types and nested data structures. Files stored in the Parquet format are highly compressed and can be read and written in parallel, which makes them ideal for big data applications.
+
+- _P.S. Screenshots included are used to show results from which I got the numbers, since rendered file might appear slightly different from the first time I ran the code._
 
 ![Dimensions of the result tibble](./q2.5.1.png)
 ![First 10 rows of the result tibble](./q2.5.2.png)
@@ -284,6 +288,8 @@ Write a few sentences to explain what is DuckDB. Imagine you want to explain it 
 
 - DuckDB is an in-memory database management system designed primarily for analytical query workloads. It is embeddable, meaning it can be easily integrated into other applications like R and Python. DuckDB processes data in memory and stores data in a columnar format, which makes it very efficient for analytical queries.
 
+- _P.S. Screenshots included are used to show results from which I got the numbers, since rendered file might appear slightly different from the first time I ran the code._
+
 ![Dimensions of the result tibble](./q2.6.1.png)
 ![First 10 rows of the result tibble](./q2.6.2.png)
 
@@ -320,9 +326,6 @@ Document the steps and show code. Display the number of rows and the first 10 ro
 
 **Answer:** There are **22,502,319** rows in the filtered tibble. The first 10 rows of the result tibble are displayed below.
 
-![Dimensions of the result tibble](./q3.1.png)
-![First 10 rows of the result tibble](./q3.2.1.png)
-![First 10 rows of the result tibble (continued)](./q3.2.2.png)
 
 ```{bash, eval = FALSE}
 gzip -dk ~/mimic/icu/chartevents.csv.gz
