@@ -41,7 +41,7 @@ library(dplyr)
 ```
 
 Display memory information of your computer
-```{r}
+```{r, eval = TRUE}
 memuse::Sys.meminfo()
 ```
 
@@ -49,11 +49,11 @@ In this exercise, we explore various tools for ingesting the [MIMIC-IV](https://
 
 Display the contents of MIMIC `hosp` and `icu` data folders:
 
-```{bash}
+```{bash, eval = TRUE}
 ls -l ~/mimic/hosp/
 ```
 
-```{bash}
+```{bash, eval = TRUE}
 ls -l ~/mimic/icu/
 ```
 
@@ -214,7 +214,7 @@ Write a few sentences to explain what is Apache Arrow. Imagine you want to expla
 gzip -dk ~/mimic/hosp/labevents.csv.gz
 ```
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 system.time({
   labevents_arrow <- arrow::open_csv_dataset("labevents.csv") %>%
   select(subject_id, itemid, charttime, valuenum) %>%
@@ -253,7 +253,7 @@ arrow::open_csv_dataset("labevents.csv") %>%
 arrow::write_dataset(format = "parquet", path = "./labevents.parquet")
 ```
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 system.time({
   labevents_pqt <- arrow::open_dataset("labevents.parquet") %>%
   select(subject_id, itemid, charttime, valuenum) %>%
@@ -287,7 +287,7 @@ Write a few sentences to explain what is DuckDB. Imagine you want to explain it 
 ![Dimensions of the result tibble](./q2.6.1.png)
 ![First 10 rows of the result tibble](./q2.6.2.png)
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 library(duckdb)
 system.time({
   labevents_pqt_duckdb <- arrow::open_dataset("labevents.parquet") %>%
@@ -307,11 +307,11 @@ head(labevents_pqt_duckdb, 10)
 ## Q3. Ingest and filter `chartevents.csv.gz`
 
 [`chartevents.csv.gz`](https://mimic.mit.edu/docs/iv/modules/icu/chartevents/) contains all the charted data available for a patient. During their ICU stay, the primary repository of a patient’s information is their electronic chart. The `itemid` variable indicates a single measurement type in the database. The `value` variable is the value measured for `itemid`. The first 10 lines of `chartevents.csv.gz` are
-```{bash}
+```{bash, eval = TRUE}
 zcat < ~/mimic/icu/chartevents.csv.gz | head -10
 ```
 [`d_items.csv.gz`](https://mimic.mit.edu/docs/iv/modules/icu/d_items/) is the dictionary for the `itemid` in `chartevents.csv.gz`.
-```{bash}
+```{bash, eval = TRUE}
 zcat < ~/mimic/icu/d_items.csv.gz | head -10
 ```
 In later exercises, we are interested in the vitals for ICU patients: heart rate (220045), mean non-invasive blood pressure (220181), systolic non-invasive blood pressure (220179), body temperature in Fahrenheit (223761), and respiratory rate (220210). Retrieve a subset of `chartevents.csv.gz` only containing these items, using the favorite method you learnt in Q2. 
@@ -328,7 +328,7 @@ Document the steps and show code. Display the number of rows and the first 10 ro
 gzip -dk ~/mimic/icu/chartevents.csv.gz
 ```
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 chartevents_fltr <- arrow::open_csv_dataset("chartevents.csv") %>%
                     filter(itemid %in% c(220045, 220181, 220179, 223761,
                                          220210)) %>%
