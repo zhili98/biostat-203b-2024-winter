@@ -1,7 +1,7 @@
 ---
 title: "Biostat 203B Homework 3"
 subtitle: "Due Feb 23 @ 11:59PM"
-author: "Your Name and UID"
+author: "Zhi Li, UID: 506333161"
 format:
   html:
     theme: cosmo
@@ -21,12 +21,14 @@ sessionInfo()
 ```
 
 Load necessary libraries (you can add more as needed).
-```{r setup}
+```{r, eval = TRUE}
 library(arrow)
+library(gtsummary)
 library(memuse)
 library(pryr)
 library(R.utils)
 library(tidyverse)
+library(readr)
 ```
 
 Display your machine memory.
@@ -49,6 +51,126 @@ Do a similar visualization for the patient with `subject_id` 10013310 using ggpl
 
 Hint: We need to pull information from data files `patients.csv.gz`, `admissions.csv.gz`, `transfers.csv.gz`, `labevents.csv.gz`, `procedures_icd.csv.gz`, `diagnoses_icd.csv.gz`, `d_icd_procedures.csv.gz`, and `d_icd_diagnoses.csv.gz`. For the big file `labevents.csv.gz`, use the Parquet format you generated in Homework 2. For reproducibility, make the Parquet folder `labevents_pq` available at the current working directory `hw3`, for example, by a symbolic link. Make your code reproducible.
 
+#### Answer
+
+```{r, eval = TRUE}
+patients_tble <- read_csv("~/mimic/hosp/patients.csv.gz")
+patients_tble
+admissions_tble <- read_csv("~/mimic/hosp/admissions.csv.gz")
+admissions_tble
+transfers_tble <- read_csv("~/mimic/hosp/transfers.csv.gz")
+transfers_tble
+labevents_tble <- read_parquet("labevents.parquet/part-0.parquet") 
+procedures_icd_tble <- read_csv("~/mimic/hosp/procedures_icd.csv.gz")
+procedures_icd_tble
+diagnoses_icd_tble <- read_csv("~/mimic/hosp/diagnoses_icd.csv.gz")
+diagnoses_icd_tble
+d_icd_procedures_tble <- read_csv("~/mimic/hosp/d_icd_procedures.csv.gz")
+d_icd_procedures_tble
+d_icd_diagnoses_tble <- read_csv("~/mimic/hosp/d_icd_diagnoses.csv.gz")
+d_icd_diagnoses_tble
+```
+
+Import `transfer.csv.gz` as a tibble `sid_adt`:
+```{r, eval = TRUE}
+sid <- 10013310
+
+sid_adt <- read_csv("~/mimic/hosp/transfers.csv.gz") |>
+  filter(subject_id == sid) |>
+  print(width = Inf)
+```
+
+Store patient's demographic information as `age`, `sex`, and `race`:
+```{r, eval = TRUE}
+age <- patients_tble %>%
+  filter(subject_id == sid) %>%
+  pull(anchor_age)
+
+sex <- patients_tble %>%
+  filter(subject_id == sid) %>%
+  pull(gender)
+
+race <- admissions_tble %>%
+  filter(subject_id == sid) %>%
+  distinct(race) %>%
+  pull()
+```
+
+Store the top 3 diagnoses as `top3_diag`:
+```{r, eval = TRUE}
+top3_diag_icd <- diagnoses_icd_tble %>%
+  filter(subject_id == sid) %>%
+  slice_head(n = 3) %>%
+  pull(icd_code)
+top3_diag_icd
+
+top3_diag <- d_icd_diagnoses_tble %>%
+  filter(icd_code %in% top3_diag_icd) %>%
+  pull(long_title)
+top3_diag
+```
+
+Subset `labevents_tble` to `sid_lab`:
+```{r, eval = TRUE}
+sid_lab <- labevents_tble %>%
+  filter(subject_id == sid) %>%
+  select(charttime)
+sid_lab
+```
+
+Subset `procedures_icd_tble`:
+```{r, eval = TRUE}
+sid_procedure <- procedures_icd_tble %>%
+  filter(subject_id == sid) %>%
+  select(chartdate, icd_code)
+sid_procedure <- left_join(sid_procedure, d_icd_procedures_tble, by = "icd_code") %>%
+  select(chartdate, long_title)
+sid_procedure$chartdate <- sid_procedure$chartdate %>% as_datetime()
+sid_procedure
+```
+
+Generate the final plot:
+```{r, eval = TRUE, fig.width=13, fig.height=7}
+  ggplot() +
+  # ADT
+  geom_segment(data = sid_adt %>%
+                 filter(eventtype != "discharge"),
+               aes(x = intime,
+                   xend = outtime,
+                   y = "ADT",
+                   yend = "ADT",
+                   color = careunit,
+                   linewidth = str_detect(careunit, "(ICU|CCU)"))) +
+  # Lab
+  geom_point(data = sid_lab,
+             aes(x = charttime,
+                 y = "Lab"),
+             shape = 3,
+             size = 3) +
+  # Procedure
+  geom_point(data = sid_procedure,
+             aes(x = chartdate,
+                 y = "Procedure",
+                 shape = long_title,
+                 size = 3)) +
+  scale_shape_manual(values = c(2:10)) +
+  #guides(shape = guide_legend(title = "Procedure")) +
+  guides(linewidth = "none",
+         size = "none",
+         color = guide_legend(title = "Care Unit"),
+         shape = guide_legend(title = "Procedure", nrow = 5)) +
+  labs(
+    x = "Calendar Time",
+    y = "",
+    title = str_c("Patient ", sid, ", ", sex, ", ", age, " years old, ", race),
+    subtitle = str_c(top3_diag[1],"\n", top3_diag[2],"\n", top3_diag[3])
+  ) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        legend.box = "vertical") +
+  scale_y_discrete(limits = c("Procedure", "Lab", "ADT"))
+```
+
 ### Q1.2 ICU stays
 
 ICU stays are a subset of ADT history. This figure shows the vitals of the patient `10001217` during ICU stays. The x-axis is the calendar time, and the y-axis is the value of the vital. The color of the line represents the type of vital. The facet grid shows the abbreviation of the vital and the stay ID.
@@ -56,6 +178,54 @@ ICU stays are a subset of ADT history. This figure shows the vitals of the patie
 ![](10001217_icu.png)
 
 Do a similar visualization for the patient `10013310`.
+
+#### Answer
+
+Create a .parquet file for `chartevents.csv`:
+```{r, eval = FALSE}
+# I chose arrow::open_csv_dataset() for HW2 Q3, so I have to convert it into
+# a .parqeut file in this HW.
+arrow::open_csv_dataset("/home/zhili/203b-hw/hw2/chartevents.csv") %>%
+  filter(itemid %in% c(220045, 220181, 220179, 223761, 220210) & 
+         subject_id == sid) %>%
+  write_parquet("/home/zhili/203b-hw/hw2/chartevents.parquet")
+```
+
+Read in the .parquet file:
+```{r, eval = TRUE}
+chartevents_tble <- read_parquet("/home/zhili/203b-hw/hw2/chartevents.parquet")
+chartevents_tble
+
+chartevents_tble$itemid <- as.factor(chartevents_tble$itemid)
+```
+
+Generate the plot:
+```{r, eval = TRUE}
+# labeling the itemid
+vital_labels <- c(`220045` = "HR", 
+                  `220181` = "NBPd",
+                  `220179` = "NBPs", 
+                  `220210` = "RR",
+                  `223761` = "Temperature")
+
+chartevents_tble$itemid <- factor(chartevents_tble$itemid, levels = names(vital_labels))
+```
+
+```{r, eval = TRUE, fig.width=10, fig.height=7}
+ggplot(chartevents_tble, aes(x = charttime, y = valuenum)) +
+  geom_line(aes(color = itemid)) +
+  geom_point(aes(color = itemid)) +
+  facet_grid(itemid ~ stay_id, 
+             scales = "free", 
+             labeller = labeller(itemid = vital_labels)) +
+  labs(
+    x = "Calendar Time",
+    y = "Vital",
+    title = str_c("Patient ", sid, " ICU stays - Vitals")
+  ) +
+  theme_light() +
+  guides(color = "none")
+```
 
 ## Q2. ICU stays
 
