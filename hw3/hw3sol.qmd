@@ -186,14 +186,15 @@ Create a .parquet file for `chartevents.csv`:
 # I chose arrow::open_csv_dataset() for HW2 Q3, so I have to convert it into
 # a .parqeut file in this HW.
 arrow::open_csv_dataset("/home/zhili/203b-hw/hw2/chartevents.csv") %>%
-  filter(itemid %in% c(220045, 220181, 220179, 223761, 220210) & 
+  filter(itemid %in% c(220045, 220180, 220179, 223761, 220210) & 
          subject_id == sid) %>%
-  write_parquet("/home/zhili/203b-hw/hw2/chartevents.parquet")
+  arrow::write_dataset(format = "parquet", 
+                       path = "/home/zhili/203b-hw/hw2/chartevents.parquet")
 ```
 
 Read in the .parquet file:
 ```{r, eval = TRUE}
-chartevents_tble <- read_parquet("/home/zhili/203b-hw/hw2/chartevents.parquet")
+chartevents_tble <- read_parquet("chartevents.parquet/part-0.parquet")
 chartevents_tble
 
 chartevents_tble$itemid <- as.factor(chartevents_tble$itemid)
@@ -203,7 +204,7 @@ Generate the plot:
 ```{r, eval = TRUE}
 # labeling the itemid
 vital_labels <- c(`220045` = "HR", 
-                  `220181` = "NBPd",
+                  `220180` = "NBPd",
                   `220179` = "NBPs", 
                   `220210` = "RR",
                   `223761` = "Temperature")
@@ -236,11 +237,57 @@ zcat < ~/mimic/icu/icustays.csv.gz | head
 
 ### Q2.1 Ingestion
 
-Import `icustays.csv.gz` as a tibble `icustays_tble`. 
+Import `icustays.csv.gz` as a tibble `icustays_tble`.
+
+#### Answer:
+
+```{r, eval = TRUE}
+icustays_tble <- read_csv("~/mimic/icu/icustays.csv.gz")
+icustays_tble
+```
 
 ### Q2.2 Summary and visualization
 
 How many unique `subject_id`? Can a `subject_id` have multiple ICU stays? Summarize the number of ICU stays per `subject_id` by graphs. 
+
+#### Answer:
+
+There are 50,920 unique `subject_id`s. A `subject_id` can have multiple ICU stays as shown below. The patient with `subject_id` 18358138 has 37 ICU stays, the most among all patients.
+
+```{r, eval = TRUE}
+icustays_tble %>% distinct(subject_id)
+
+icustay_count <- icustays_tble %>%
+  count(subject_id) %>%
+  arrange(desc(n)) %>%
+  print(width = Inf)
+```
+
+```{r, eval = TRUE}
+icustay_count %>%
+  ggplot(aes(x = n)) +
+  geom_bar(color = "darkblue",
+           fill = "lightskyblue") +
+  labs(
+    x = "Number of ICU stays",
+    y = "Number of patients",
+    title = "Number of ICU stays per patient"
+  ) +
+  theme_light()
+
+icustay_count %>%
+  filter(n > 5) %>%
+  ggplot(aes(x = n)) +
+  geom_bar(color = "darkblue",
+           fill = "lightskyblue") +
+  labs(
+    x = "Number of ICU stays",
+    y = "Number of patients",
+    title = "Number of ICU stays per patient (stays >= 6)"
+  ) +
+  scale_x_continuous(breaks = seq(6, 37, 1)) +
+  theme_light()
+```
 
 ## Q3. `admissions` data
 
@@ -252,6 +299,13 @@ zcat < ~/mimic/hosp/admissions.csv.gz | head
 ### Q3.1 Ingestion
 
 Import `admissions.csv.gz` as a tibble `admissions_tble`.
+
+#### Answer:
+
+```{r, eval = TRUE}
+admissions_tble <- read_csv("~/mimic/hosp/admissions.csv.gz")
+admissions_tble
+```
 
 ### Q3.2 Summary and visualization
 
@@ -266,6 +320,150 @@ According to the [MIMIC-IV documentation](https://mimic.mit.edu/docs/iv/about/co
 
 > All dates in the database have been shifted to protect patient confidentiality. Dates will be internally consistent for the same patient, but randomly distributed in the future. Dates of birth which occur in the present time are not true dates of birth. Furthermore, dates of birth which occur before the year 1900 occur if the patient is older than 89. In these cases, the patient’s age at their first admission has been fixed to 300.
 
+#### Answer:
+
+Transform the data and summarize the information:
+
+```{r, eval = TRUE}
+adm_count <- admissions_tble %>%
+  count(subject_id)
+adm_count
+
+adm_hour <- admissions_tble %>%
+  select(admittime) %>%
+  pull() %>%
+  format("%H") %>%
+  as_tibble()
+adm_hour
+
+adm_minute <- admissions_tble %>%
+  select(admittime) %>%
+  pull() %>%
+  format("%M") %>%
+  as_tibble()
+adm_minute
+
+adm_los <- admissions_tble %>%
+  mutate(los = as.numeric(dischtime - admittime, units = "hours")) %>%
+  select(los)
+adm_los
+```
+
+Plot the transformed data:
+
+**Number of admissions per patient**
+```{r, eval = TRUE}
+adm_count %>%
+  ggplot(aes(x = n)) +
+  geom_histogram(binwidth = 1,
+                 color = "darkblue",
+                 fill = "lightskyblue") +
+  labs(
+    x = "Number of admissions",
+    y = "Number of patients",
+    title = "Number of admissions per patient"
+  ) +
+  geom_vline(xintercept = 10, color = "red") +
+  annotate("text", x = 30, y = -5000, label = "10 admissions", color = "red") +
+  theme_light()
+```
+
+**Admission hour**
+```{r, eval = TRUE}
+adm_hour %>%
+  ggplot(aes(x = value)) +
+  geom_bar(fill = "lightskyblue",
+           color = "darkblue") +
+  labs(
+    x = "Admission hour",
+    y = "Number of admissions",
+    title = "Admission hour"
+  ) +
+  theme_light()
+```
+
+**Admission minute**
+```{r, eval = TRUE}
+top4admmin <- adm_minute %>% 
+              count(value) %>% 
+              arrange(desc(n)) %>%
+              slice_head(n = 4)
+
+adm_minute %>%
+  ggplot(aes(x = as.numeric(value))) +
+  geom_histogram(binwidth = 1,
+                 color = "darkblue",
+                 fill = "lightskyblue") +
+  
+  labs(
+    x = "Admission minute",
+    y = "Number of admissions",
+    title = "Admission minute"
+  ) +
+  annotate("text", 
+           x = as.numeric(top4admmin[1,1]), 
+           y = as.numeric(top4admmin[1,2]) + 1000 , 
+           label = str_c(top4admmin[1,1], ": ", top4admmin[1,2]), 
+           color = "red") +
+  annotate("text", 
+           x = as.numeric(top4admmin[2,1]), 
+           y = as.numeric(top4admmin[2,2]) + 1000 , 
+           label = str_c(top4admmin[2,1], ": ", top4admmin[2,2]), 
+           color = "red") +
+  annotate("text", 
+           x = as.numeric(top4admmin[3,1]), 
+           y = as.numeric(top4admmin[3,2]) + 1000 ,
+           label = str_c(top4admmin[3,1], ": ", top4admmin[3,2]), 
+           color = "red") +
+  annotate("text", 
+           x = as.numeric(top4admmin[4,1]), 
+           y = as.numeric(top4admmin[4,2]) + 1000 ,
+           label = str_c(top4admmin[4,1], ": ", top4admmin[4,2]), 
+           color = "red") +
+  theme_light()
+```
+
+
+**Length of hospital stay**
+```{r, eval = TRUE}
+adm_los %>%
+  ggplot(aes(x = los)) +
+  geom_histogram(binwidth = 24,
+                 color = "darkblue",
+                 fill = "lightskyblue") +
+  labs(
+    x = "Length of hospital stay (hours)",
+    y = "Number of admissions",
+    title = "Length of hospital stay"
+  ) +
+  theme_light()
+
+adm_los %>%
+  filter(los < 1000) %>%
+  ggplot(aes(x = los)) +
+  geom_histogram(binwidth = 24,
+                 color = "darkblue",
+                 fill = "lightskyblue") +
+  labs(
+    x = "Length of hospital stay (hours)",
+    y = "Number of admissions",
+    title = "Length of hospital stay (< 1,000 hours)"
+  ) +
+  theme_light()
+```
+
+- The number of admissions per patient is right-skewed, with most patients having 1 or 2 admissions. There are some outliers distributed evenly from more than 25 admissions, among which we can see a patient that has 238 admissions which is far more than the rest.
+
+```{r, eval = TRUE}
+adm_count %>% arrange(desc(n))
+```
+
+- The admission hour is not showing any unusual pattern. The most admissions occur at 12 a.m. at the midnight and generally there are more admissions from 14 p.m. to 12 a.m. than the rest of the day. Also we can see that there are more admissions at 7 a.m. than the nearby hours.
+
+- The admission minute is almost distributed evenly, except for the top 4 minutes which are `00`, `15`, `30`, and `45`, with frequency of `26,319`, `22,243`, `12,673`, and `9,239`, respectively.
+
+- The length of hospital stay (los) is right-skewed, with most admissions having a length of stay less than 100 hours.
+
 ## Q4. `patients` data
 
 Patient information is available in `patients.csv.gz`. See <https://mimic.mit.edu/docs/iv/modules/hosp/patients/> for details of each field in this file. The first 10 lines are
@@ -277,9 +475,52 @@ zcat < ~/mimic/hosp/patients.csv.gz | head
 
 Import `patients.csv.gz` (<https://mimic.mit.edu/docs/iv/modules/hosp/patients/>) as a tibble `patients_tble`.
 
+#### Answer:
+
+```{r, eval = TRUE}
+patients_tble <- read_csv("~/mimic/hosp/patients.csv.gz")
+patients_tble
+```
+
 ### Q4.2 Summary and visualization
 
 Summarize variables `gender` and `anchor_age` by graphics, and explain any patterns you see.
+
+#### Answer:
+
+Plot `gender`:
+```{r, eval = TRUE}
+patients_tble %>% ggplot() +
+  geom_bar(aes(x = gender),
+           color = "darkblue",
+           fill = "lightskyblue") +
+  labs(
+    x = "Gender",
+    y = "Count",
+    title = "Gender count"
+  ) +
+  scale_x_discrete(labels = c("Female", "Male"))
+  theme_light()
+```
+
+Plot `anchor_age`:
+```{r, eval = TRUE}
+patients_tble %>% ggplot() +
+  geom_histogram(aes(x = anchor_age, fill = gender),
+                 binwidth = 5,
+                 color = "black") +
+  labs(
+    x = "Age",
+    y = "Count",
+    title = "Age distribution vs. Gender"
+  ) +
+  guides(fill = guide_legend(title = "Gender")) +
+  theme_light()
+```
+
+- There are slightly more female patients than male patients in the `patient.csv.gz` data set. The total number of female patients is slightly over `150,000`, while the total number of male patients is slightly below `150,000`.
+
+- The age distribution is right-skewed, with most patients being younger than 30 years old. The number of patients shows a decreasing trend as age increases when age is greater than 55 years old. In general, the proportion of 2 genders in each age group is similar, some times female is slightly more than male.
 
 ## Q5. Lab results
 
