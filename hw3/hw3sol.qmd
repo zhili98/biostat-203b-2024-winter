@@ -60,7 +60,7 @@ admissions_tble <- read_csv("~/mimic/hosp/admissions.csv.gz")
 admissions_tble
 transfers_tble <- read_csv("~/mimic/hosp/transfers.csv.gz")
 transfers_tble
-labevents_tble <- read_parquet("labevents.parquet/part-0.parquet") 
+labevents_tble <- read_parquet("labevents_pq/part-0.parquet") 
 procedures_icd_tble <- read_csv("~/mimic/hosp/procedures_icd.csv.gz")
 procedures_icd_tble
 diagnoses_icd_tble <- read_csv("~/mimic/hosp/diagnoses_icd.csv.gz")
@@ -186,15 +186,15 @@ Create a .parquet file for `chartevents.csv`:
 # I chose arrow::open_csv_dataset() for HW2 Q3, so I have to convert it into
 # a .parqeut file in this HW.
 arrow::open_csv_dataset("/home/zhili/203b-hw/hw2/chartevents.csv") %>%
-  filter(itemid %in% c(220045, 220180, 220179, 223761, 220210) & 
-         subject_id == sid) %>%
+  filter(itemid %in% c(220045, 220180, 220179, 223761, 220210)) %>%
   arrow::write_dataset(format = "parquet", 
-                       path = "/home/zhili/203b-hw/hw2/chartevents.parquet")
+                       path = "/home/zhili/203b-hw/hw2/chartevents_pq")
 ```
 
 Read in the .parquet file:
 ```{r, eval = TRUE}
-chartevents_tble <- read_parquet("chartevents.parquet/part-0.parquet")
+chartevents_tble <- read_parquet("chartevents_pq/part-0.parquet") %>%
+  filter(subject_id == sid)
 chartevents_tble
 
 chartevents_tble$itemid <- as.factor(chartevents_tble$itemid)
@@ -541,6 +541,70 @@ We are interested in the lab measurements of creatinine (50912), potassium (5097
 
 Hint: Use the Parquet format you generated in Homework 2. For reproducibility, make `labevents_pq` folder available at the current working directory `hw3`, for example, by a symbolic link.
 
+#### Answer:
+
+```{r, eval = TRUE}
+labevents_tble <- labevents_tble %>%
+  filter(itemid %in% c(50912, 50971, 50983, 50902, 50882, 51221, 51301, 
+                       50931)) %>%
+  filter(subject_id %in% icustays_tble$subject_id)
+labevents_tble
+```
+
+```{r, eval = TRUE}
+# Step 1: Join the tables on subject_id
+joined_tble <- icustays_tble %>%
+  left_join(labevents_tble, by = "subject_id")
+joined_tble
+
+# Step 2: Filter rows where lab event storetime is before ICU stay intime
+pre_icu_labevents <- joined_tble %>%
+  filter(storetime < intime)
+pre_icu_labevents
+
+# Step 3: Pick out the storetime that is maximized but not greater than intime
+last_labevents_pre_icu <- pre_icu_labevents %>%
+  group_by(subject_id, stay_id, itemid) %>% 
+  summarise(storetime = max(storetime)) 
+# Get maximum storetime for each group
+# Group: per itemid for per stay for per patient
+last_labevents_pre_icu
+
+# Step 4: Join the last lab events before ICU stay with the pre_icu_labevents
+final_labevents_pre_icu <- last_labevents_pre_icu %>%
+  left_join(pre_icu_labevents, 
+            by = c("subject_id", "stay_id", "storetime", "itemid"))
+final_labevents_pre_icu
+
+# Step 5: Pivot wider
+wider_lab <- final_labevents_pre_icu %>%
+  select(subject_id, stay_id, itemid, valuenum) %>%
+  arrange(subject_id, stay_id) %>%
+  pivot_wider(
+    names_from = itemid,
+    values_from = valuenum,
+    values_fn = list(valuenum = last) # Use last to get the last measurement
+  )
+wider_lab
+
+# Step 6: Rename the original itemid to the corresponding lab measurement
+wider_lab <- wider_lab %>%
+  rename(
+    creatinine = `50912`,
+    potassium = `50971`,
+    sodium = `50983`,
+    chloride = `50902`,
+    bicarbonate = `50882`,
+    hematocrit = `51221`,
+    wbc = `51301`,
+    glucose = `50931`
+  )
+wider_lab
+
+labevents_tble <- wider_lab %>% ungroup()
+labevents_tble 
+```
+
 ## Q6. Vitals from charted events
 
 `chartevents.csv.gz` (<https://mimic.mit.edu/docs/iv/modules/icu/chartevents/>) contains all the charted data available for a patient. During their ICU stay, the primary repository of a patient’s information is their electronic chart. The `itemid` variable indicates a single measurement type in the database. The `value` variable is the value measured for `itemid`. The first 10 lines of `chartevents.csv.gz` are
@@ -559,6 +623,65 @@ We are interested in the vitals for ICU patients: heart rate (220045), systolic 
 
 Hint: Use the Parquet format you generated in Homework 2. For reproducibility, make `chartevents_pq` folder available at the current working directory, for example, by a symbolic link.
 
+#### Answer:
+
+```{r, eval = TRUE}
+chartevents_tble <- read_parquet("chartevents_pq/part-0.parquet") %>%
+  filter(subject_id %in% icustays_tble$subject_id)
+chartevents_tble
+chartevents_tble_backup <- chartevents_tble
+```
+
+```{r, eval = TRUE}
+# Step 1: Pick out the minimum of charttime per ICU stay
+first_chartevents_icu <- chartevents_tble %>%
+  group_by(subject_id, stay_id, itemid) %>% 
+  summarise(charttime = min(charttime))
+first_chartevents_icu
+
+# Step 2: Join the first_chartevents_icu with the chartevents_tble
+final_chartevents_icu <- first_chartevents_icu %>%
+  left_join(chartevents_tble, 
+            by = c("subject_id", "stay_id", "charttime", "itemid"))
+final_chartevents_icu
+
+# Step 3: Pivot wider
+wider_chart <- final_chartevents_icu %>%
+  select(subject_id, stay_id, itemid, valuenum) %>%
+  arrange(subject_id, stay_id) %>%
+  pivot_wider(
+    names_from = itemid,
+    values_from = valuenum,
+    values_fn = list(valuenum = first) # Use first to get the first measurement
+  )
+wider_chart
+
+# Step 4: Rename the original itemid to the corresponding vital measurement
+wider_chart <- wider_chart %>%
+  rename(
+    heart_rate = `220045`,
+    non_invasive_blood_pressure_systolic = `220179`,
+    non_invasive_blood_pressure_diastolic = `220180`,
+    temperature_fahrenheit = `223761`,
+    respiratory_rate = `220210`
+  )
+wider_chart
+
+chartevents_tble <- wider_chart %>% ungroup()
+```
+
+```{r, eval = TRUE}
+# Testing the behavior of summarise()
+a <- tibble(
+  time = c(1,1,2,2,3,3),
+  value = c(5,2,3,4,9,6)
+)
+
+a %>%
+  group_by(time) %>%
+  summarise(value = max(value))
+```
+
 ## Q7. Putting things together
 
 Let us create a tibble `mimic_icu_cohort` for all ICU stays, where rows are all ICU stays of adults (age at `intime` >= 18) and columns contain at least following variables
@@ -572,6 +695,49 @@ Let us create a tibble `mimic_icu_cohort` for all ICU stays, where rows are all 
 The final `mimic_icu_cohort` should have one row per ICU stay and columns for each variable.
 
 ![](mimic_icu_cohort.png)
+
+#### Answer:
+
+```{r, eval = TRUE}
+# Step 1: Join the icustays_tble with the patients_tble
+mimic_icu_cohort <- icustays_tble %>%
+  left_join(patients_tble, by = "subject_id")
+
+# Step 2: Calculate the true age by the time of intime
+mimic_icu_cohort$intime_year <- mimic_icu_cohort %>%
+  select(intime) %>%
+  pull() %>%
+  format("%Y") %>%
+  as.numeric()
+
+mimic_icu_cohort <- mimic_icu_cohort %>%
+  mutate(age_intime = intime_year - anchor_year + anchor_age) %>%
+  filter(age_intime >= 18) %>%
+  select(-age_intime)
+
+# Step 3: Join the mimic_icu_cohort with the admissions_tble
+final_admit_pre_icu <- mimic_icu_cohort %>%
+  left_join(admissions_tble, by = c("subject_id", "hadm_id")) %>%
+  filter(admittime <= intime) %>%
+  group_by(subject_id, stay_id) %>%
+  summarise(admittime = max(admittime)) %>%
+  ungroup()
+
+mimic_icu_cohort <- mimic_icu_cohort %>%
+  left_join(final_admit_pre_icu, by = c("subject_id", "stay_id"))
+
+mimic_icu_cohort <- mimic_icu_cohort %>%
+  left_join(admissions_tble, by = c("subject_id", "hadm_id", "admittime"))
+
+# Step 4: Join the mimic_icu_cohort with labevents_tble
+mimic_icu_cohort <- mimic_icu_cohort %>%
+  left_join(labevents_tble, by = c("subject_id", "stay_id"))
+
+# Step 5: Join the mimic_icu_cohort with chartevents_tble
+mimic_icu_cohort <- mimic_icu_cohort %>%
+  left_join(chartevents_tble, by = c("subject_id", "stay_id"))
+mimic_icu_cohort %>% print(width = Inf)
+```
 
 ## Q8. Exploratory data analysis (EDA)
 
