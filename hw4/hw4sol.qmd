@@ -95,12 +95,12 @@ Connect to the `labevents` table and retrieve a subset that only contain subject
 labevents_tble <- tbl(con_bq, "labevents") |>
   filter(itemid %in% c(50912, 50971, 50983, 50902,
                        50882, 51221, 51301, 50931)) |>
-           right_join(icustays_tble, by = "subject_id") |>
-           filter(storetime <= intime) |>
-           group_by(subject_id, stay_id, itemid) |>
-           slice_max(storetime) |>
-           ungroup() |>
-           select(subject_id, stay_id, itemid, valuenum) |>
+  right_join(icustays_tble, by = "subject_id") |>
+  filter(storetime < intime) |>
+  group_by(subject_id, stay_id, itemid) |>
+  slice_max(storetime) |>
+  ungroup() |>
+  select(subject_id, stay_id, itemid, valuenum) |>
   pivot_wider(
     names_from = itemid,
     values_from = valuenum
@@ -218,7 +218,7 @@ mimic_icu_cohort |>
 ### Q1.9 Save the final tibble
 
 Save the final tibble to an R data file `mimic_icu_cohort.rds` in the `mimiciv_shiny` folder.
-```{r}
+```{r, eval = TRUE}
 # make a directory mimiciv_shiny
 if (!dir.exists("mimiciv_shiny")) {
   dir.create("mimiciv_shiny")
@@ -228,7 +228,7 @@ mimic_icu_cohort |>
   write_rds("mimiciv_shiny/mimic_icu_cohort.rds", compress = "gz")
 ```
 Close database connection and clear workspace.
-```{r}
+```{r, eval = TRUE}
 if (exists("con_bq")) {
   dbDisconnect(con_bq)
 }
