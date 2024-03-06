@@ -70,6 +70,9 @@ Connect to the `icustays` table.
 icustays_tble <- tbl(con_bq, "icustays") |>
   # show_query() |>
   print(width = Inf)
+
+
+
 ```
 
 ### Q1.3 `admissions` data
