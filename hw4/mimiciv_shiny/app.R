@@ -49,6 +49,18 @@ procedures_icd_tble <- tbl(con_bq, "procedures_icd") |>
 d_icd_procedures_tble <- tbl(con_bq, "d_icd_procedures") |>
   collect()
 
+mimic_sid <- mimic_icu_cohort$subject_id
+
+# Must retrieve data from bigquery first since we cannot use SQL to send
+# shiny reactive object to bigquery
+labevents_tble <- tbl(con_bq, "labevents") |> # Over 100 million rows
+  filter(subject_id %in% mimic_sid) |> # About 60 million rows
+  select(subject_id, charttime) |> # About 60 million rows times 2 columns
+  group_by(subject_id) |>
+  distinct(charttime) |> # Shrinking data size by collapsing duplicates
+  ungroup() |> # About 3 million rows times 2 columns
+  collect() # Collect only when not exceeding the query limit
+
 #-------------------------------------------------------------------------------
 # Shiny app
 # Define ui
@@ -58,9 +70,9 @@ ui <- fluidPage(
     
     # Panel 1: Patient Characteristics
     tabPanel(
-      # Pane 1 title
+      # Panel 1 title
       title = "Patient Characteristics",
-      # Pane 1 sidebar (input)
+      # Panel 1 sidebar (input)
       sidebarPanel(
         helpText("Select a patient."),
         selectInput(inputId = "var",
@@ -86,7 +98,7 @@ ui <- fluidPage(
                       label = "Remove outliers in IQR method for measurements?",
                       value = TRUE)
       ),
-      # Pane 1 main panel (output)
+      # Panel 1 main panel (output)
       mainPanel(
         plotOutput(outputId = "dist_plot")
       )
@@ -94,15 +106,15 @@ ui <- fluidPage(
     
     # Panel 2: Patient's ADT and ICU stay information
     tabPanel(
-      # Pane 2 title
+      # Panel 2 title
       title = "Patient's ADT and ICU stay information",
-      # Pane 2 sidebar (input)
+      # Panel 2 sidebar (input)
       sidebarPanel(
         numericInput(inputId = "sid",
                      label = "Patient ID:",
                      value = 10012055)
       ),
-      # Pane 2 main panel (output)
+      # Panel 2 main panel (output)
       mainPanel(
         plotOutput(outputId = "adt_plot")
       )
@@ -252,9 +264,11 @@ server <- function(input, output) {
       pull(long_title) |> 
       head(3)
   })
+  # Can't use input$sid (shiny reactive object) for filtering a bigquery table 
+  # by translating dplyr function into SQL query.
   
   sid_lab <- reactive({
-    tbl(con_bq, "labevents") |>
+    labevents_tble |>
       filter(subject_id == input$sid) |>
       select(charttime) |>
       collect()
