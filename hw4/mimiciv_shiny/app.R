@@ -61,6 +61,11 @@ labevents_tble <- tbl(con_bq, "labevents") |> # Over 100 million rows
   ungroup() |> # About 3 million rows times 2 columns
   collect() # Collect only when not exceeding the query limit
 
+labevents_sid <- labevents_tble |>
+  distinct(subject_id) |>
+  select(subject_id) |>
+  arrange()
+
 #-------------------------------------------------------------------------------
 # Shiny app
 # Define ui
@@ -110,9 +115,10 @@ ui <- fluidPage(
       title = "Patient's ADT and ICU stay information",
       # Panel 2 sidebar (input)
       sidebarPanel(
-        numericInput(inputId = "sid",
-                     label = "Patient ID:",
-                     value = 10012055)
+        selectInput(inputId = "sid",
+                    label = "Patient ID:",
+                    choices = labevents_sid,
+                    selected = 10012055)
       ),
       # Panel 2 main panel (output)
       mainPanel(
