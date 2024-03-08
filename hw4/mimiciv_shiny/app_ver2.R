@@ -12,17 +12,16 @@ library(R.utils)
 library(GGally)
 
 ################################################################################
-# Version 1: Fast 'Run App', Slow plotting
+# Version 2: Fast plotting, Slow 'Run App'
 
-# Difference: This version put the bigquery steps within the server function.
+# Difference: This version put the bigquery steps outside of the server function.
 
 # PROS: 
-# 1. It takes up less local memory.
-# 2. It takes almost no time to run the app.
+# 1. Fast plotting for ADT plot in Panel 2 since tibbles are all
+# collected in advance. No more waiting when switching between patients.
 
 # CONS:
-# 1. A longer query time for plotting the ADT plot in Panel 2.
-# Users have to wait every time they change the input (patient ID).
+# 1. Takes up a lot of memory and time to run the app.
 
 ################################################################################
 
@@ -47,9 +46,37 @@ con_bq <- dbConnect(
 )
 con_bq
 
-# Save IDs for drop-down menu in Panel 2
+# Retrieve the data sets to avoid unnecessary query time
+transfers_tble <- tbl(con_bq, "transfers") |>
+  collect()
+
+diagnoses_icd_tble <- tbl(con_bq, "diagnoses_icd") |>
+  collect()
+
+d_icd_diagnoses_tble <- tbl(con_bq, "d_icd_diagnoses") |>
+  collect()
+
+procedures_icd_tble <- tbl(con_bq, "procedures_icd") |>
+  collect()
+
+d_icd_procedures_tble <- tbl(con_bq, "d_icd_procedures") |>
+  collect()
 
 mimic_sid <- mimic_icu_cohort$subject_id
+
+# Filter the labevents_tble to a size that will not exceed the limit of bigquery
+labevents_tble <- tbl(con_bq, "labevents") |> # Over 100 million rows
+  filter(subject_id %in% mimic_sid) |> # About 60 million rows
+  select(subject_id, charttime) |> # About 60 million rows times 2 columns
+  group_by(subject_id) |>
+  distinct(charttime) |> # Shrinking data size by collapsing duplicates
+  ungroup() |> # About 3 million rows times 2 columns
+  collect() # Collect only when not exceeding the query limit
+
+labevents_sid <- labevents_tble |>
+  distinct(subject_id) |>
+  select(subject_id) |>
+  arrange()
 
 #-------------------------------------------------------------------------------
 # Shiny app
@@ -102,7 +129,7 @@ ui <- fluidPage(
       sidebarPanel(
         selectInput(inputId = "sid",
                     label = "Patient ID:",
-                    choices = mimic_sid,
+                    choices = labevents_sid,
                     selected = 10012055)
       ),
       # Panel 2 main panel (output)
@@ -222,14 +249,10 @@ server <- function(input, output) {
     }
   })
   
-  # Pre-processsing data for Panel 2
-  
   sid_adt <- reactive({ 
-    sid <- as.numeric(input$sid)
-    tbl(con_bq, "transfers") |> 
-      filter(subject_id == sid) |> 
-      select(intime, outtime, careunit, eventtype) |>
-      collect()
+    transfers_tble |> 
+      filter(subject_id == input$sid) |> 
+      select(intime, outtime, careunit, eventtype)
   })
   
   age <- reactive({
@@ -251,34 +274,60 @@ server <- function(input, output) {
   })
   
   top3_diag <- reactive({
-    sid <- as.numeric(input$sid)
-    tbl(con_bq, "diagnoses_icd") |> 
-      filter(subject_id == sid) |> 
+    diagnoses_icd_tble |> 
+      filter(subject_id == input$sid) |> 
       count(icd_code) |> 
-      left_join(tbl(con_bq, "d_icd_diagnoses"), by = "icd_code") |> 
+      left_join(d_icd_diagnoses_tble, by = "icd_code") |> 
       arrange(desc(n)) |> 
       pull(long_title) |> 
       head(3)
   })
   
+  # Can't use input$sid (shiny reactive object) for filtering a bigquery table 
+  # by translating dplyr function into SQL query.
+  
+  # If I run: 
+  
+  # sid <- reactive({input$sid})
+  # 'filter(subject_id == sid)'
+  
+  # then an error will popout in R console:
+  
+  # Warning: Error in :
+  # Cannot translate a shiny reactive to SQL.
+  
+  # Moreover, I tried using '!!' to tell 'dbplyr' to evaluate the shiny reactive
+  # expression locally, but it didn't work:
+  
+  # 'filter(subject_id == !!sid())'
+  
+  # Then I got:
+  
+  # Warning: Error in bq_dataset_query: 
+  # Job biostat-203b-2024-winter.job_eCmqmkmatoPU_gwZZkShJus_WRw6.us-west2 
+  # failed
+  # ✖ No matching signature for operator = for argument types: INT64, STRING. 
+  # Supported signature: ANY = ANY at [3:8] [invalidQuery]
+  
+  # Possible solution: version 1 (app.R)
+  # Use as.numeric within a reactive({}) to convert the shiny reactive object
+  # into a numeric value and save it to a local static variable (i.e. evaluate
+  # the shiny reactive object locally).
+
   sid_lab <- reactive({
-    sid <- as.numeric(input$sid)
-    tbl(con_bq, "labevents") |> 
-      filter(subject_id == sid) |> 
+    labevents_tble |>
+      filter(subject_id == input$sid) |>
       select(charttime) |>
-      distinct(charttime) |>
       collect()
   })
   
   sid_procedure <- reactive({
-    sid <- as.numeric(input$sid)
-    tbl(con_bq, "procedures_icd") |> 
-      filter(subject_id == sid) |> 
+    procedures_icd_tble |>
+      filter(subject_id == input$sid) |>
       select(chartdate, icd_code) |>
-      left_join(tbl(con_bq, "d_icd_procedures"), by = "icd_code") |>
+      left_join(d_icd_procedures_tble, by = "icd_code") |>
       select(chartdate, long_title) |>
-      mutate(chartdate = as.POSIXct(chartdate)) |>
-      collect()
+      mutate(chartdate = as.POSIXct(chartdate))
   })
   
   
