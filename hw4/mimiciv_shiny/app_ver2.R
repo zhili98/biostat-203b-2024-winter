@@ -117,7 +117,11 @@ ui <- fluidPage(
       ),
       # Panel 1 main panel (output)
       mainPanel(
-        plotOutput(outputId = "dist_plot")
+        tabsetPanel(
+          tabPanel("Graphical Summary", plotOutput(outputId = "dist_plot")),
+          tabPanel("Numerical Summary", 
+                   verbatimTextOutput(outputId = "num_summary"))
+        )
       )
     ),
     
@@ -249,6 +253,141 @@ server <- function(input, output) {
     }
   })
   
+  # Table for Panel 1
+  
+  output$num_summary <- renderPrint({
+    if(input$var %in% c("Lab Events", "Vitals")) {
+      
+      if(input$var == "Lab Events") {
+        # Lab + remove
+        if(input$check){
+          mimic_icu_cohort |> 
+            select(sodium, potassium, glucose, creatinine, chloride, bicarbonate) |>
+            drop_na() |>
+            # Remove outliers
+            filter(sodium > quantile(sodium, 0.25) - 1.5*IQR(sodium) & 
+                     sodium < quantile(sodium, 0.75) + 1.5*IQR(sodium) &
+                     potassium > quantile(potassium, 0.25) - 1.5*IQR(potassium) & 
+                     potassium < quantile(potassium, 0.75) + 1.5*IQR(potassium) &
+                     glucose > quantile(glucose, 0.25) - 1.5*IQR(glucose) & 
+                     glucose < quantile(glucose, 0.75) + 1.5*IQR(glucose) &
+                     creatinine > quantile(creatinine, 0.25) - 1.5*IQR(creatinine) & 
+                     creatinine < quantile(creatinine, 0.75) + 1.5*IQR(creatinine) &
+                     chloride > quantile(chloride, 0.25) - 1.5*IQR(chloride) & 
+                     chloride < quantile(chloride, 0.75) + 1.5*IQR(chloride) &
+                     bicarbonate > 
+                     quantile(bicarbonate, 0.25) - 1.5*IQR(bicarbonate) & 
+                     bicarbonate < 
+                     quantile(bicarbonate, 0.75) + 1.5*IQR(bicarbonate)) |>
+            summary()
+          # Lab + keep
+        } else {
+          mimic_icu_cohort |> 
+            select(sodium, potassium, glucose, creatinine, chloride, bicarbonate) |> 
+            summary()
+        }
+        # Vitals + remove
+      } else {
+        if(input$check){
+          mimic_icu_cohort |> 
+            select(heart_rate, non_invasive_blood_pressure_diastolic,
+                   non_invasive_blood_pressure_systolic, respiratory_rate,
+                   temperature_fahrenheit) |>
+            drop_na() |>
+            # Remove outliers
+            filter(heart_rate > quantile(heart_rate, 0.25) - 1.5*IQR(heart_rate) & 
+                     heart_rate < quantile(heart_rate, 0.75) + 1.5*IQR(heart_rate) &
+                     non_invasive_blood_pressure_diastolic > 
+                     quantile(non_invasive_blood_pressure_diastolic, 0.25) - 
+                     1.5*IQR(non_invasive_blood_pressure_diastolic) & 
+                     non_invasive_blood_pressure_diastolic < 
+                     quantile(non_invasive_blood_pressure_diastolic, 0.75) + 
+                     1.5*IQR(non_invasive_blood_pressure_diastolic) &
+                     non_invasive_blood_pressure_systolic > 
+                     quantile(non_invasive_blood_pressure_systolic, 0.25) - 
+                     1.5*IQR(non_invasive_blood_pressure_systolic) & 
+                     non_invasive_blood_pressure_systolic < 
+                     quantile(non_invasive_blood_pressure_systolic, 0.75) + 
+                     1.5*IQR(non_invasive_blood_pressure_systolic) &
+                     respiratory_rate > quantile(respiratory_rate, 0.25) - 
+                     1.5*IQR(respiratory_rate) & 
+                     respiratory_rate < quantile(respiratory_rate, 0.75) + 
+                     1.5*IQR(respiratory_rate) &
+                     temperature_fahrenheit > 
+                     quantile(temperature_fahrenheit, 0.25) - 
+                     1.5*IQR(temperature_fahrenheit) & 
+                     temperature_fahrenheit < 
+                     quantile(temperature_fahrenheit, 0.75) + 
+                     1.5*IQR(temperature_fahrenheit)) |>
+            summary()
+          # Vitals + keep
+        } else {
+          mimic_icu_cohort |> 
+            select(heart_rate, non_invasive_blood_pressure_diastolic,
+                   non_invasive_blood_pressure_systolic, respiratory_rate,
+                   temperature_fahrenheit) |>
+            summary()
+        }
+      }
+      
+    } else if(input$var %in% c("Length of stay", "Age at intime")) {
+      # Los
+      if(input$var == "Length of stay"){
+        value <- mimic_icu_cohort$los
+        # los + remove
+        if(input$check){
+          value |> 
+            as_tibble() |>
+            drop_na() |>
+            filter(value > quantile(value, 0.25) - 1.5*IQR(value) & 
+                     value < quantile(value, 0.75) + 1.5*IQR(value)) |>
+            summary()
+          # los + keep
+        } else {
+          value |> 
+            as_tibble() |>
+            summary()
+        }
+        # Age
+      } else {
+        value <- mimic_icu_cohort$age_intime
+        # age + remove
+        if(input$check){
+          value |> 
+            as_tibble() |>
+            drop_na() |>
+            filter(value > quantile(value, 0.25) - 1.5*IQR(value) & 
+                     value < quantile(value, 0.75) + 1.5*IQR(value)) |>
+            summary()
+          # age + keep
+        } else {
+          value |> 
+            as_tibble() |>
+            summary()
+        }
+      }
+      # Categorical 
+    } else {
+      value <- mimic_icu_cohort[[input$var]]
+      n_tbl <- value |> 
+        table() |>
+        as_tibble()
+      
+      prop_tbl <- value |>
+        table() |>
+        prop.table() |>
+        as_tibble() |>
+        mutate(prop = round(n, 2)) |>
+        select(-n)
+      
+      joined_tbl <- n_tbl |> left_join(prop_tbl, by = "value")
+      
+      return(joined_tbl)
+    }
+  })
+  
+  # Pre-process the data for Panel 2
+  
   sid_adt <- reactive({ 
     transfers_tble |> 
       filter(subject_id == input$sid) |> 
@@ -377,6 +516,5 @@ server <- function(input, output) {
 }
 
 shinyApp(ui = ui, server = server)
-
 
 
