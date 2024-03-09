@@ -262,17 +262,22 @@ server <- function(input, output) {
         # Lab + remove
         if(input$check){
           mimic_icu_cohort |> 
-            select(sodium, potassium, glucose, creatinine, chloride, bicarbonate) |>
+            select(sodium, potassium, glucose, 
+                   creatinine, chloride, bicarbonate) |>
             drop_na() |>
             # Remove outliers
             filter(sodium > quantile(sodium, 0.25) - 1.5*IQR(sodium) & 
                      sodium < quantile(sodium, 0.75) + 1.5*IQR(sodium) &
-                     potassium > quantile(potassium, 0.25) - 1.5*IQR(potassium) & 
-                     potassium < quantile(potassium, 0.75) + 1.5*IQR(potassium) &
+                     potassium > 
+                     quantile(potassium, 0.25) - 1.5*IQR(potassium) & 
+                     potassium < 
+                     quantile(potassium, 0.75) + 1.5*IQR(potassium) &
                      glucose > quantile(glucose, 0.25) - 1.5*IQR(glucose) & 
                      glucose < quantile(glucose, 0.75) + 1.5*IQR(glucose) &
-                     creatinine > quantile(creatinine, 0.25) - 1.5*IQR(creatinine) & 
-                     creatinine < quantile(creatinine, 0.75) + 1.5*IQR(creatinine) &
+                     creatinine > 
+                     quantile(creatinine, 0.25) - 1.5*IQR(creatinine) & 
+                     creatinine < 
+                     quantile(creatinine, 0.75) + 1.5*IQR(creatinine) &
                      chloride > quantile(chloride, 0.25) - 1.5*IQR(chloride) & 
                      chloride < quantile(chloride, 0.75) + 1.5*IQR(chloride) &
                      bicarbonate > 
@@ -283,7 +288,8 @@ server <- function(input, output) {
           # Lab + keep
         } else {
           mimic_icu_cohort |> 
-            select(sodium, potassium, glucose, creatinine, chloride, bicarbonate) |> 
+            select(sodium, potassium, glucose,
+                   creatinine, chloride, bicarbonate) |> 
             summary()
         }
         # Vitals + remove
@@ -295,8 +301,10 @@ server <- function(input, output) {
                    temperature_fahrenheit) |>
             drop_na() |>
             # Remove outliers
-            filter(heart_rate > quantile(heart_rate, 0.25) - 1.5*IQR(heart_rate) & 
-                     heart_rate < quantile(heart_rate, 0.75) + 1.5*IQR(heart_rate) &
+            filter(heart_rate >
+                     quantile(heart_rate, 0.25) - 1.5*IQR(heart_rate) & 
+                     heart_rate <
+                     quantile(heart_rate, 0.75) + 1.5*IQR(heart_rate) &
                      non_invasive_blood_pressure_diastolic > 
                      quantile(non_invasive_blood_pressure_diastolic, 0.25) - 
                      1.5*IQR(non_invasive_blood_pressure_diastolic) & 
@@ -516,5 +524,6 @@ server <- function(input, output) {
 }
 
 shinyApp(ui = ui, server = server)
+
 
 
