@@ -21,6 +21,11 @@ Using the ICU cohort `mimiciv_icu_cohort.rds` you built in Homework 4, develop a
 
 ### 1. Answer:
 
+Check memory usage:
+```{r, eval = TRUE}
+memuse::Sys.meminfo()
+```
+
 ```{r, eval = TRUE}
 library(readr)
 library(tidyverse)
@@ -30,9 +35,9 @@ library(gtsummary)
 library(finetune)
 library(GGally)
 library(doParallel)
-library(future)
-library(kernlab)
-library(keras)
+#library(future)
+#library(kernlab)
+#library(keras)
 
 mimiciv_icu_cohort <- read_rds("mimic_icu_cohort.rds")
 mimiciv_icu_cohort |> head()
@@ -50,7 +55,7 @@ mimiciv_icu_cohort <- mimiciv_icu_cohort |>
 mimiciv_icu_cohort |> 
   arrange(subject_id)
 
-future::plan(multicore)
+registerDoParallel(cores = detectCores())
 
 for (i in c(1:nrow(mimiciv_icu_cohort))) {
   sid = mimiciv_icu_cohort$subject_id[i]
@@ -252,7 +257,7 @@ rf_mod
 gb_mod <- 
   boost_tree(
     mode = "classification",
-    trees = 1000, 
+    trees = 500, 
     tree_depth = tune(),
     learn_rate = tune()
   ) |> 
@@ -319,7 +324,7 @@ gb_wf
 param_grid_en <- grid_regular(
   penalty(range = c(-6, -1)), 
   mixture(),
-  levels = c(100, 5)
+  levels = c(50, 5)
   )
 param_grid_en
 
@@ -327,7 +332,7 @@ param_grid_en
 # Define the range for `mtry` and `trees`
 # Adjust the range based on the model and data
 mtry_range <- mtry(range = c(3L, 6L))
-trees_range <- trees(range = c(175L, 225L))
+trees_range <- trees(range = c(150L, 250L))
 
 # Combine parameters into a set
 params_rf <- parameters(mtry_range, trees_range)
@@ -335,7 +340,7 @@ params_rf <- parameters(mtry_range, trees_range)
 # Finalize params if necessary
 # `mtry` might need to be finalized based on the number of predictors in 
 # the data set
-params_rf_final <- finalize(params_rf, mimic_other)
+params_bayes_rf <- finalize(params_rf, mimic_other)
 
 #(for grid_regular())-----------------------------------------------------------
 param_grid_rf <- grid_regular(
@@ -352,7 +357,7 @@ learn_rate_range <- learn_rate(range = c(-3, -1), trans = log10_trans())
 
 params_gb <- parameters(tree_depth_range, learn_rate_range)
 
-params_gb_final <- finalize(params_gb, mimic_other)
+params_bayes_gb <- finalize(params_gb, mimic_other)
 
 #(for grid_regular())-----------------------------------------------------------
 param_grid_gb <- grid_regular(
@@ -419,10 +424,10 @@ en_fit
 (rf_fit_bayes <- rf_wf |>
   tune_bayes(
     resamples = folds, 
-    param_info = params_rf_final,
+    param_info = params_bayes_rf,
     metrics = metric_set(roc_auc, accuracy),
     initial = 3,
-    iter = 2
+    iter = 5
     )) |>
   system.time()
 rf_fit_bayes
@@ -432,7 +437,7 @@ rf_fit_bayes
 #(gb_fit_ann <- gb_wf |>
 #  tune_sim_anneal(
 #    resamples = folds,
-#    param_info = params_gb_final,
+#    param_info = params_bayes_gb,
 #    metrics = metric_set(roc_auc, accuracy),
 #    iter = 5
 #    )) |>
@@ -443,10 +448,10 @@ rf_fit_bayes
 (gb_fit_bayes <- gb_wf |>
   tune_bayes(
     resamples = folds,
-    param_info = params_gb_final,
+    param_info = params_bayes_gb,
     metrics = metric_set(roc_auc, accuracy),
     initial = 3,
-    iter = 2
+    iter = 5
     )) |>
   system.time()
 gb_fit_bayes
@@ -614,9 +619,9 @@ set.seed(203)
   tune_bayes(
     object = rf_wf, 
     resamples = folds, 
-    param_info = params_rf_final,
-    initial = 2,
-    iter = 1,
+    param_info = params_bayes_rf,
+    initial = 3,
+    iter = 3,
     control = control_stack_bayes()
   )) |> 
   system.time()
@@ -625,9 +630,9 @@ set.seed(203)
   tune_bayes(
     object = gb_wf, 
     resamples = folds, 
-    param_info = params_gb_final,
-    initial = 2,
-    iter = 1,
+    param_info = params_bayes_gb,
+    initial = 3,
+    iter = 3,
     control = control_stack_bayes()
   )) |> 
   system.time()
@@ -668,17 +673,18 @@ set.seed(203)
 **Build the stacked ensemble**
 ```{r, eval = TRUE}
 doParallel::registerDoParallel(cores = detectCores())
-set.seed(203)
+#set.seed(203)
 (mimic_model_st <- 
   # initialize the stack
   stacks() |>
   # add candidate members
   add_candidates(en_res) |>
   add_candidates(rf_res) |>
- # add_candidates(gb_res) |>
+  add_candidates(gb_res) |>
   # determine how to combine their predictions
   blend_predictions(
-    penalty = 10^(-1:0),
+    penalty = 10^(-3:0),
+    times = 10,
     metrics = c("roc_auc")
     ) |>
   # fit the candidates with nonzero stacking coefficients
@@ -723,6 +729,5 @@ extract_workflow(final_gb_fit) |>
   extract_fit_parsnip() |>
   vip(num_features = 38)
 ```
-
 
 4. Compare model classification performance on the test set. Report both the area under ROC curve and accuracy for each machine learning algorithm and the model stacking. Interpret the results. What are the most important features in predicting long ICU stays? How do the models compare in terms of performance and interpretability?
