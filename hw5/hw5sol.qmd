@@ -21,6 +21,60 @@ Using the ICU cohort `mimiciv_icu_cohort.rds` you built in Homework 4, develop a
 
 ### 1. Answer:
 
+1. New variables:
+ 
+    - `intime_night`: `YES` if the patient was admitted to the ICU between 12am and 6am, and `NO` otherwise.
+  
+    - `adm_count` : Total admissions count per patient.
+  
+2. Features chosen:
+  
+    - `los_long`: Outcome variable.
+  
+    - `intime_night`: Categorical variable.
+  
+    - `first_careunit`: Categorical variable.
+  
+    - `gender`: Categorical variable.
+  
+    - `age_intime`: Numeric variable.
+  
+    - `admission_type`: Categorical variable.
+  
+    - `admission_location`: Categorical variable.
+  
+    - `insurance`: Categorical variable.
+  
+    - `marital_status`: Categorical variable.
+  
+    - `race`: Categorical variable.
+  
+    - `creatinine`: Numeric variable.
+  
+    - `sodium`: Numeric variable.
+  
+    - `chloride`: Numeric variable.
+  
+    - `hematocrit`: Numeric variable.
+  
+    - `glucose`: Numeric variable.
+  
+    - `wbc`: Numeric variable.
+  
+    - `bicarbonate`: Numeric variable.
+  
+    - `potassium`: Numeric variable.
+  
+    - `heart_rate`: Numeric variable.
+  
+    - `respiratory_rate`: Numeric variable.
+  
+    - `non_invasive_blood_pressure_diastolic`: Numeric variable.
+  
+    - `non_invasive_blood_pressure_systolic`: Numeric variable.
+  
+    - `temperature_fahrenheit`: Numeric variable.
+
 Check memory usage:
 ```{r, eval = TRUE}
 memuse::Sys.meminfo()
@@ -600,7 +654,7 @@ gb_metrics <- final_gb_fit |>
   print()
 ```
 
-### 3.2 Model Stacking
+#### 3.2 Model Stacking
 
 **Setting up tuning grid for model stacking** (tune_bayes)
 ```{r, eval = TRUE}
@@ -763,19 +817,68 @@ library(rpart.plot)
 library(vip)
 
 ## 1. Logistic Regression
-extract_workflow(final_en_fit) |>
+ importance_en <- extract_workflow(final_en_fit) |>
   extract_fit_parsnip() |>
-  vip(num_features = 38)
+  vip(num_features = 38) |>
+  print()
 
 ## 2. Random Forest
-extract_workflow(final_rf_fit) |>
+importance_rf <- extract_workflow(final_rf_fit) |>
   extract_fit_parsnip() |>
-  vip(num_features = 23)
+  vip(num_features = 23) |>
+  print()
 
 ## 3. XGBoost
-extract_workflow(final_gb_fit) |>
+importance_gb <- extract_workflow(final_gb_fit) |>
   extract_fit_parsnip() |>
-  vip(num_features = 38)
+  vip(num_features = 38) |>
+  print()
 ```
 
 4. Compare model classification performance on the test set. Report both the area under ROC curve and accuracy for each machine learning algorithm and the model stacking. Interpret the results. What are the most important features in predicting long ICU stays? How do the models compare in terms of performance and interpretability?
+
+### 4. Answer:
+
+```{r, eval = TRUE}
+results
+importance_en
+importance_rf
+importance_gb
+```
+
+1. Final Results
+
+    - As we can see from the table above, `Model Stacking` has the highest `accuracy` (0.6145227) and `ROC_AUC` (0.6587066) among all 4 models. `XGBoost` comes second with an `accuracy` of 0.6145227 and `ROC_AUC` of 0.6587066 which are pretty close to the results of the `Model Stacking`. `Random Forest` comes third with an `accuracy` of 0.6071985 and `ROC_AUC` of 0.6456452. `Logistic Regression` comes last with an `accuracy` of 0.5796234 and `ROC_AUC` of 0.6100015, which is not a satisfactory result as it did not show an obvious improvement compared to the baseline model.
+
+2. Feature-importance
+
+    - From the plot we can see that basically, the most important features in predicting long ICU stays are the lab measurements, vital signs, age, admission location, and first care unit.
+    
+    - Lab measurements and vital signs: These features are relatively more important as they can directly show the patient's health status and the severity of the disease, which can be crucial for predicting the length of ICU stay.
+    
+    - Age: Age is also an important feature, as older patients are more likely to have a longer ICU stay.
+    
+    - Admission location/type: These features are also important. For instance, A patient with an admission location **TRANSFER FROM HOSPITAL** is more likely to have a longer ICU stay since the patient could have been transferred from another hospital due to the severity of the disease. On the other hand, a patient with an admission type **SURGICAL SAME DAY ADMISSION** is more likely to have a longer ICU stay since the patient might need a longer time to recover from the surgery. 
+    
+    - First care unit: A patient might have longer ICU stay if he/she is first admitted to the **SICU** (Surgical ICU) or **MICU** (Medical ICU) compared to other care units.
+    
+    - Intime night: This feature is created based on the time the patient was transferred into the ICU. If the patient was transferred to the ICU between 12am and 6am, the patient is more likely to have a more severe condition, which can lead to a longer ICU stay.
+    
+    
+3. Interpretation and Models Comparison
+
+    - `Model Stacking` combines the predictions of multiple models, potentially leading to a more robust and generalized model. This approach can leverage the unique strengths of each base model, leading to improved performance. As a result, unsurprisingly, `Model Stacking` outperforms all other models in terms of `accuracy` and `ROC_AUC`.
+
+    - In `mimiciv_icu_cohort`, interactions between variables (e.g., between different lab measurements or vital signs) can be crucial for prediction. Tree-based models like `Random Forest` and `XGBoost` are well suited to capture these interactions. `XGBoost` showed a better performance over `Random Forest`, probably due to its ability to capture non-linear relationships and interactions between variables more effectively. Also, `XGBoost` is less prone to overfitting compared to `Random Forest` since it builds trees sequentially and learns from previous trees slowly.
+    
+    - `Logistic Regression` is a simple and interpretable model, but it may not be able to capture complex relationships between variables. As a result, it showed a relatively poor performance compared to other ensemble models (**homogeneous:** `Random Forest` and `XGBoost`. **heterogeneous:** `Stacking`). However, it is more interpretable and easier to understand compared to other models. For instance, we can easily interpret the coefficients of the model as: "For one-unit increase in `creatinine`, the logarithm of odds of having a long ICU stay increases by $\beta_{creatinine}$ units, holding all other variables constant."  Whereas other models do not provide such interpretability.
+
+
+
+
+
+
+
+
+
+
