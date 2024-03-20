@@ -223,7 +223,7 @@ mlp_recipe <-
   # center and scale numeric data
   step_normalize(all_numeric_predictors()) |>
   # estimate the means and standard deviations
-  # prep(training = Heart_other, retain = TRUE) |>
+  # prep(training = mimic_other, retain = TRUE) |>
   print()
 }
 ```
@@ -343,12 +343,12 @@ params_rf <- parameters(mtry_range, trees_range)
 params_bayes_rf <- finalize(params_rf, mimic_other)
 
 #(for grid_regular())-----------------------------------------------------------
-param_grid_rf <- grid_regular(
-  trees(range = c(200L, 300L)), 
-  mtry(range = c(3L, 6L)),
-  levels = c(5, 5)
-  )
-param_grid_rf
+# param_grid_rf <- grid_regular(
+#   trees(range = c(200L, 300L)), 
+#   mtry(range = c(3L, 6L)),
+#   levels = c(5, 5)
+#   )
+# param_grid_rf
 #-------------------------------------------------------------------------------
 
 # 3. XGBoost 
@@ -360,12 +360,12 @@ params_gb <- parameters(tree_depth_range, learn_rate_range)
 params_bayes_gb <- finalize(params_gb, mimic_other)
 
 #(for grid_regular())-----------------------------------------------------------
-param_grid_gb <- grid_regular(
-  tree_depth(range = c(3L, 6L)),
-  learn_rate(range = c(-3, 0), trans = log10_trans()),
-  levels = c(3, 10)
-  )
-param_grid_gb
+# param_grid_gb <- grid_regular(
+#   tree_depth(range = c(3L, 6L)),
+#   learn_rate(range = c(-3, 0), trans = log10_trans()),
+#   levels = c(3, 10)
+#   )
+# param_grid_gb
 #-------------------------------------------------------------------------------
 
 # 4. SVM with RBF kernel
@@ -489,7 +489,7 @@ en_fit |>
   scale_x_log10()
 
 # 2. Random Forest
-rf_fit |>
+rf_fit_bayes |>
   collect_metrics() |>
   print(width = Inf) |>
   filter(.metric == "roc_auc") |>
@@ -499,7 +499,7 @@ rf_fit |>
   labs(x = "Num. of Trees", y = "CV AUC")
 
 # 3. XGBoost
-gb_fit |>
+gb_fit_bayes |>
   collect_metrics() |>
   print(width = Inf) |>
   filter(.metric == "roc_auc") |>
@@ -509,14 +509,14 @@ gb_fit |>
   scale_x_log10()
 
 # 5. MLP
-mlp_fit |>
-  collect_metrics() |>
-  print(width = Inf) |>
-  filter(.metric == "roc_auc") |>
-  ggplot(mapping = aes(x = dropout, y = mean, color = factor(hidden_units))) +
-  geom_point() +
-  labs(x = "Dropout Rate", y = "CV AUC") +
-  scale_x_log10()
+#mlp_fit |>
+#  collect_metrics() |>
+#  print(width = Inf) |>
+#  filter(.metric == "roc_auc") |>
+#  ggplot(mapping = aes(x = dropout, y = mean, color = factor(hidden_units))) +
+#  geom_point() +
+#  labs(x = "Dropout Rate", y = "CV AUC") +
+#  scale_x_log10()
 ```
 
 **Select the best model**
@@ -530,7 +530,7 @@ best_en <- en_fit |>
 best_en
 
 # 2. Random Forest
-rf_fit |>
+rf_fit_bayes |>
   show_best("roc_auc")
 
 best_rf <- rf_fit_bayes |>
@@ -538,10 +538,10 @@ best_rf <- rf_fit_bayes |>
 best_rf
 
 # 3. XGBoost
-gb_fit |>
+gb_fit_bayes |>
   show_best("roc_auc")
 
-best_gb <- gb_fit |>
+best_gb <- gb_fit_bayes |>
   select_best("roc_auc")
 best_gb
 ```
@@ -640,6 +640,7 @@ set.seed(203)
 
 **Setting up tuning grid for model stacking** (tune_grid)
 ```{r, eval = TRUE}
+if (FALSE) {
 registerDoParallel(cores = detectCores())
 set.seed(203)
 (en_res <- 
@@ -668,12 +669,13 @@ set.seed(203)
     control = control_stack_grid()
   )) |> 
   system.time()
+}
 ```
 
 **Build the stacked ensemble**
 ```{r, eval = TRUE}
 doParallel::registerDoParallel(cores = detectCores())
-#set.seed(203)
+set.seed(203)
 (mimic_model_st <- 
   # initialize the stack
   stacks() |>
@@ -692,6 +694,52 @@ doParallel::registerDoParallel(cores = detectCores())
   system.time()
 ```
 
+**Check the top results**
+```{r, eval = TRUE}
+autoplot(mimic_model_st, type = "weights")
+collect_parameters(mimic_model_st, "rf_res")
+```
+
+**Model stacking classification**
+```{r, eval = TRUE}
+doParallel::registerDoParallel(cores = detectCores())
+
+mimic_pred_auc <- mimic_test %>%
+  bind_cols(predict(mimic_model_st, ., type = "prob")) %>%
+  print(width = Inf)
+
+mimic_pred_acc <-
+  mimic_test |>
+  select(los_long) |>
+  bind_cols(
+    predict(
+      mimic_model_st,
+      mimic_test,
+      type = "class",
+      members = TRUE
+      )
+    ) |>
+  print(width = Inf)
+```
+
+**Metrics for model stacking**
+```{r, eval = TRUE}
+st_auc <- yardstick::roc_auc(
+  mimic_pred_auc,
+  truth = los_long,
+  contains(".pred_FALSE")
+  )
+
+st_acc <- yardstick::accuracy(
+  mimic_pred_acc,
+  truth = los_long,
+  estimate = .pred_class
+  )
+
+st_metrics <- bind_rows(st_acc, st_auc) |>
+  print()
+```
+
 **Final Results**
 ```{r, eval = TRUE}
 results <- tibble(
@@ -700,11 +748,11 @@ results <- tibble(
   Accuracy = c(en_metrics$.estimate[1],
                rf_metrics$.estimate[1], 
                gb_metrics$.estimate[1],
-               0),
+               st_metrics$.estimate[1]),
   ROC_AUC = c(en_metrics$.estimate[2],
               rf_metrics$.estimate[2],
               gb_metrics$.estimate[2],
-              0),
+              st_metrics$.estimate[2]),
 ) |>
   print()
 ```
