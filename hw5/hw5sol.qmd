@@ -652,13 +652,16 @@ rf_metrics <- final_rf_fit |>
 gb_metrics <- final_gb_fit |>
   collect_metrics() |>
   print()
+
+#rm(en_fit, rf_fit_bayes, gb_fit_bayes)
 ```
 
 #### 3.2 Model Stacking
 
 **Setting up tuning grid for model stacking** (tune_bayes)
 ```{r, eval = TRUE}
-registerDoParallel(cores = detectCores())
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
 set.seed(203)
 (en_res <- 
   tune_grid(
@@ -680,6 +683,14 @@ set.seed(203)
   )) |> 
   system.time()
 
+stopCluster(cl)
+gc()
+```
+
+```{r, eval = TRUE}
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+set.seed(203)
 (gb_res <-
   tune_bayes(
     object = gb_wf, 
@@ -690,6 +701,7 @@ set.seed(203)
     control = control_stack_bayes()
   )) |> 
   system.time()
+stopCluster(cl)
 ```
 
 **Setting up tuning grid for model stacking** (tune_grid)
@@ -728,7 +740,8 @@ set.seed(203)
 
 **Build the stacked ensemble**
 ```{r, eval = TRUE}
-doParallel::registerDoParallel(cores = detectCores())
+cl <- makeCluster(detectCores())
+doParallel::registerDoParallel(cl)
 set.seed(203)
 (mimic_model_st <- 
   # initialize the stack
@@ -746,6 +759,8 @@ set.seed(203)
   # fit the candidates with nonzero stacking coefficients
   fit_members()) |>
   system.time()
+stopCluster(cl)
+gc()
 ```
 
 **Check the top results**
@@ -756,7 +771,8 @@ collect_parameters(mimic_model_st, "rf_res")
 
 **Model stacking classification**
 ```{r, eval = TRUE}
-doParallel::registerDoParallel(cores = detectCores())
+cl <- makeCluster(detectCores())
+doParallel::registerDoParallel(cl)
 
 mimic_pred_auc <- mimic_test %>%
   bind_cols(predict(mimic_model_st, ., type = "prob")) %>%
@@ -774,6 +790,7 @@ mimic_pred_acc <-
       )
     ) |>
   print(width = Inf)
+stopCluster(cl)
 ```
 
 **Metrics for model stacking**
@@ -848,7 +865,7 @@ importance_gb
 
 1. Final Results
 
-    - As we can see from the table above, `Model Stacking` has the highest `accuracy` (0.6145227) and `ROC_AUC` (0.6587066) among all 4 models. `XGBoost` comes second with an `accuracy` of 0.6145227 and `ROC_AUC` of 0.6587066 which are pretty close to the results of the `Model Stacking`. `Random Forest` comes third with an `accuracy` of 0.6071985 and `ROC_AUC` of 0.6456452. `Logistic Regression` comes last with an `accuracy` of 0.5796234 and `ROC_AUC` of 0.6100015, which is not a satisfactory result as it did not show an obvious improvement compared to the baseline model.
+    - As we can see from the table above, `Model Stacking` has the highest `accuracy` (0.617) and `ROC_AUC` (0.661) among all 4 models. `XGBoost` comes second with an `accuracy` of 0.614 and `ROC_AUC` of 0.656 which are pretty close to the results of the `Model Stacking`. `Random Forest` comes third with an `accuracy` of 0.606 and `ROC_AUC` of 0.646. `Logistic Regression` comes last with an `accuracy` of 0.581 and `ROC_AUC` of 0.611, which is not a satisfactory result as it did not show an obvious improvement compared to the baseline model.
 
 2. Feature-importance
 
