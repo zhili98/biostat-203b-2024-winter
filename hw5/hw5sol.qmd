@@ -76,7 +76,7 @@ Using the ICU cohort `mimiciv_icu_cohort.rds` you built in Homework 4, develop a
     - `temperature_fahrenheit`: Numeric variable.
 
 Check memory usage:
-```{r, eval = TRUE}
+```{r, eval = FALSE}
 memuse::Sys.meminfo()
 ```
 
