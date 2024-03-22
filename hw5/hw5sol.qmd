@@ -1,0 +1,901 @@
+---
+title: "Biostat 203B Homework 5"
+subtitle: Due Mar 22 @ 11:59PM
+author: "Zhi Li, UID:506333161"
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: false
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+---
+
+## Predicting ICU duration
+
+Using the ICU cohort `mimiciv_icu_cohort.rds` you built in Homework 4, develop at least three machine learning approaches (logistic regression with enet regularization, random forest, boosting, SVM, MLP, etc) plus a model stacking approach for predicting whether a patient's ICU stay will be longer than 2 days. You should use the `los_long` variable as the outcome. You algorithms can use patient demographic information (gender, age at ICU `intime`, marital status, race), ICU admission information (first care unit), the last lab measurements before the ICU stay, and first vital measurements during ICU stay as features. You are welcome to use any feature engineering techniques you think are appropriate; but make sure to not use features that are not available at an ICU stay's `intime`. For instance, `last_careunit` cannot be used in your algorithms. 
+
+1. Data preprocessing and feature engineering.
+
+### 1. Answer:
+
+1. New variables:
+ 
+    - `intime_night`: `YES` if the patient was admitted to the ICU between 12am and 6am, and `NO` otherwise.
+  
+    - `adm_count` : Total admissions count per patient.
+  
+2. Features chosen:
+  
+    - `los_long`: Outcome variable.
+  
+    - `intime_night`: Categorical variable.
+  
+    - `first_careunit`: Categorical variable.
+  
+    - `gender`: Categorical variable.
+  
+    - `age_intime`: Numeric variable.
+  
+    - `admission_type`: Categorical variable.
+  
+    - `admission_location`: Categorical variable.
+  
+    - `insurance`: Categorical variable.
+  
+    - `marital_status`: Categorical variable.
+  
+    - `race`: Categorical variable.
+  
+    - `creatinine`: Numeric variable.
+  
+    - `sodium`: Numeric variable.
+  
+    - `chloride`: Numeric variable.
+  
+    - `hematocrit`: Numeric variable.
+  
+    - `glucose`: Numeric variable.
+  
+    - `wbc`: Numeric variable.
+  
+    - `bicarbonate`: Numeric variable.
+  
+    - `potassium`: Numeric variable.
+  
+    - `heart_rate`: Numeric variable.
+  
+    - `respiratory_rate`: Numeric variable.
+  
+    - `non_invasive_blood_pressure_diastolic`: Numeric variable.
+  
+    - `non_invasive_blood_pressure_systolic`: Numeric variable.
+  
+    - `temperature_fahrenheit`: Numeric variable.
+
+Check memory usage:
+```{r, eval = FALSE}
+memuse::Sys.meminfo()
+```
+
+```{r, eval = TRUE}
+library(readr)
+library(tidyverse)
+library(tidymodels)
+library(stacks)
+library(gtsummary)
+library(finetune)
+library(GGally)
+library(doParallel)
+#library(future)
+#library(kernlab)
+#library(keras)
+
+mimiciv_icu_cohort <- read_rds("mimic_icu_cohort.rds")
+mimiciv_icu_cohort |> head()
+mimiciv_icu_cohort |> summary()
+
+# Create a new variable `intime_night` = TRUE if the patient was admitted to 
+# the ICU between 12am and 6am, and FALSE otherwise.
+mimiciv_icu_cohort <- mimiciv_icu_cohort |> 
+  mutate(intime_hour = hour(intime)) |> 
+  mutate(intime_night = 
+           ifelse(intime_hour >=0 & intime_hour <= 6, "YES", "NO")) |>
+  select(-intime_hour)
+
+# Create a new variable that stores Total Admissions Count per patient
+mimiciv_icu_cohort |> 
+  arrange(subject_id)
+
+registerDoParallel(cores = detectCores())
+
+for (i in c(1:nrow(mimiciv_icu_cohort))) {
+  sid = mimiciv_icu_cohort$subject_id[i]
+  if(i == 1) { # First obs?
+    count = 1
+  } else {
+    
+    if ((sid == mimiciv_icu_cohort$subject_id[i - 1])) {
+      count = count + 1
+    } else {
+      count = 1
+    } 
+    
+  }
+  mimiciv_icu_cohort[i, "adm_count"] = count
+}
+rm(i, sid, count)
+
+mimiciv_icu_cohort <- mimiciv_icu_cohort |> 
+  select(subject_id, hadm_id, stay_id, los_long, adm_count, intime_night,
+         first_careunit, gender, age_intime, admission_type, admission_location, 
+         insurance, marital_status, race, creatinine, sodium, chloride, 
+         hematocrit, glucose, wbc, bicarbonate, potassium, heart_rate, 
+         respiratory_rate, 
+         non_invasive_blood_pressure_diastolic, 
+         non_invasive_blood_pressure_systolic,
+         temperature_fahrenheit) |>
+         mutate(los_long = as.factor(los_long),
+                intime_night = as.factor(intime_night),
+                gender = as.factor(gender),
+                insurance = as.factor(insurance),
+                marital_status = as.factor(marital_status)) |>
+         arrange(subject_id, hadm_id, stay_id) |>
+         select(-c("subject_id", "hadm_id", "stay_id"))
+
+mimiciv_icu_cohort |> tbl_summary(by = los_long)
+```
+
+2. Partition data into 50% training set and 50% test set. Stratify partitioning according to `los_long`. For grading purpose, sort the data by `subject_id`, `hadm_id`, and `stay_id` and use the seed `203` for the initial data split. Below is the sample code.
+
+### 2 Answer:
+
+- Data are already sorted at the end of the previous code chunk.
+
+**Initial Split**
+```{r, eval = TRUE}
+set.seed(203)
+
+data_split <- initial_split(
+  mimiciv_icu_cohort, 
+  # stratify by los_long
+  strata = "los_long", 
+  prop = 0.5
+  )
+data_split
+
+mimic_other <- training(data_split)
+dim(mimic_other)
+
+mimic_test <- testing(data_split)
+dim(mimic_test)
+```
+
+3. Train and tune the models using the training set.
+
+### 3 Answer:
+
+#### 3.1 Logistic Regression, Random Forest, and XGBoost
+
+**Pre-processing using `recipe`**
+```{r, eval = TRUE}
+# Recipe for Logistic Regression
+en_recipe <- 
+  recipe(
+    los_long ~ ., 
+    data = mimic_other
+  ) |>
+  # impute missing values
+  step_impute_mode(all_nominal_predictors()) |>
+  # Choose mean imputation for all lab and vital measurements
+  step_impute_mean(all_numeric_predictors()) |>
+  # create traditional dummy variables
+  step_dummy(all_nominal_predictors()) |>
+  # zero-variance filter
+  step_zv(all_numeric_predictors()) |> 
+  # center and scale numeric data
+  step_normalize(all_numeric_predictors()) |>
+  # estimate the means and standard deviations
+  # prep(training = mimic_other, retain = TRUE) |>
+  print()
+
+# Recipe for Random Forests
+rf_recipe <- 
+  recipe(
+    los_long ~ ., 
+    data = mimic_other
+  ) |>
+  # # create traditional dummy variables (not necessary for random forest in R)
+  # step_dummy(all_nominal()) |>
+  # impute missing values
+  step_impute_mode(all_nominal_predictors()) |>
+  # Choose mean imputation for all lab and vital measurements
+  step_impute_mean(all_numeric_predictors()) |>
+  # zero-variance filter
+  step_zv(all_numeric_predictors()) |>
+  # # center and scale numeric data (not necessary for random forest)
+  # step_normalize(all_numeric_predictors()) |>
+  # estimate the means and standard deviations
+  # prep(training = mimic_other, retain = TRUE) |>
+  print()
+
+# Recipe for XGBoost
+gb_recipe <- 
+  recipe(
+    los_long ~ ., 
+    data = mimic_other
+  ) |>
+  # impute missing values
+  step_impute_mode(all_nominal_predictors()) |>
+  # Choose mean imputation for all lab and vital measurements
+  step_impute_mean(all_numeric_predictors()) |>
+  # create traditional dummy variables (necessary for xgboost)
+  step_dummy(all_nominal_predictors()) |>
+  # zero-variance filter
+  step_zv(all_numeric_predictors()) |> 
+  # estimate the means and standard deviations
+  # prep(training = mimic_other, retain = TRUE) |>
+  print()
+
+if(FALSE){
+# Recipe for Support Vector Machine with RBF kernel
+svm_recipe <- 
+  recipe(
+    los_long ~ ., 
+    data = mimic_other
+  ) |>
+  # impute missing values
+  step_impute_mode(all_nominal_predictors()) |>
+  # Choose mean imputation for all lab and vital measurements
+  step_impute_mean(all_numeric_predictors()) |>
+  # # create traditional dummy variables (not necessary for random forest in R)
+  step_dummy(all_nominal_predictors()) |>
+  # zero-variance filter
+  step_zv(all_numeric_predictors()) |> 
+  # # center and scale numeric data (not necessary for random forest)
+  step_normalize(all_numeric_predictors()) |>
+  # estimate the means and standard deviations
+  # prep(training = mimic_other, retain = TRUE) |>
+  print()
+
+# Recipe for Multi-Layer Perceptron
+mlp_recipe <- 
+  recipe(
+    los_long ~ ., 
+    data = mimic_other
+  ) |>
+  # impute missing values
+  step_impute_mode(all_nominal_predictors()) |>
+  # Choose mean imputation for all lab and vital measurements
+  step_impute_mean(all_numeric_predictors()) |>
+  # create traditional dummy variables (necessary for svm)
+  step_dummy(all_nominal_predictors()) |>
+  # zero-variance filter
+  step_zv(all_numeric_predictors()) |> 
+  # center and scale numeric data
+  step_normalize(all_numeric_predictors()) |>
+  # estimate the means and standard deviations
+  # prep(training = mimic_other, retain = TRUE) |>
+  print()
+}
+```
+
+**Defining the model and the workflow**
+```{r, eval = TRUE}
+# Models
+# 1. Logistic Regression
+en_mod <- 
+  # mixture = 1 (lasso), mixture = 0 (ridge)
+  logistic_reg(
+    penalty = tune(), 
+    mixture = tune()
+  ) |> 
+  set_engine("glmnet", standardize = FALSE)
+en_mod
+
+# 2. Random Forest
+rf_mod <- 
+  rand_forest(
+    mode = "classification",
+    # Number of predictors randomly sampled in each split
+    mtry = tune(),
+    # Number of trees in ensemble
+    trees = tune()
+  ) |> 
+  set_engine("ranger", importance = "permutation")
+rf_mod
+
+# 3. XGBoost
+gb_mod <- 
+  boost_tree(
+    mode = "classification",
+    trees = 500, 
+    tree_depth = tune(),
+    learn_rate = tune()
+  ) |> 
+  set_engine("xgboost", importance = "permutation")
+gb_mod
+
+# 4. SVM with RBF kernel
+#svm_mod_rbf <- 
+#  svm_rbf(
+#    mode = "classification",
+#    cost = tune(),
+#    rbf_sigma = tune()
+#  ) |>
+#  set_engine("kernlab")
+#svm_mod_rbf
+
+# 5. MLP
+#mlp_mod <- 
+#  mlp(
+#    mode = "classification",
+#    hidden_units = tune(),
+#    dropout = tune(),
+#    epochs = 50,
+#  ) |> 
+#  set_engine("keras", verbose = 0)
+#mlp_mod
+
+# Workflows
+# 1. Logistic Regression
+en_wf <- workflow() |>
+  add_recipe(en_recipe) |>
+  add_model(en_mod)
+en_wf
+
+# 2. Random Forest
+rf_wf <- workflow() |>
+  add_recipe(rf_recipe) |>
+  add_model(rf_mod)
+rf_wf
+
+# 3. XGBoost
+gb_wf <- workflow() |>
+  add_recipe(gb_recipe) |>
+  add_model(gb_mod)
+gb_wf
+
+# 4. SVM with RBF kernel
+#svm_wf_rbf <- workflow() %>%
+#  add_recipe(svm_recipe) %>%
+#  add_model(svm_mod_rbf)
+#svm_wf_rbf
+
+# 5. MLP
+#mlp_wf <- workflow() |>
+#  add_recipe(mlp_recipe) |>
+#  add_model(mlp_mod)
+#mlp_wf
+```
+
+**Tuning hyperparameter(s) using 5-fold cross-validation**
+```{r, eval = TRUE}
+# Tuning
+# 1. Logistic Regression
+param_grid_en <- grid_regular(
+  penalty(range = c(-6, -1)), 
+  mixture(),
+  levels = c(50, 5)
+  )
+param_grid_en
+
+# 2. Random Forest 
+# Define the range for `mtry` and `trees`
+# Adjust the range based on the model and data
+mtry_range <- mtry(range = c(3L, 6L))
+trees_range <- trees(range = c(150L, 250L))
+
+# Combine parameters into a set
+params_rf <- parameters(mtry_range, trees_range)
+
+# Finalize params if necessary
+# `mtry` might need to be finalized based on the number of predictors in 
+# the data set
+params_bayes_rf <- finalize(params_rf, mimic_other)
+
+#(for grid_regular())-----------------------------------------------------------
+# param_grid_rf <- grid_regular(
+#   trees(range = c(200L, 300L)), 
+#   mtry(range = c(3L, 6L)),
+#   levels = c(5, 5)
+#   )
+# param_grid_rf
+#-------------------------------------------------------------------------------
+
+# 3. XGBoost 
+tree_depth_range <- tree_depth(range = c(3L, 6L))
+learn_rate_range <- learn_rate(range = c(-3, -1), trans = log10_trans())
+
+params_gb <- parameters(tree_depth_range, learn_rate_range)
+
+params_bayes_gb <- finalize(params_gb, mimic_other)
+
+#(for grid_regular())-----------------------------------------------------------
+# param_grid_gb <- grid_regular(
+#   tree_depth(range = c(3L, 6L)),
+#   learn_rate(range = c(-3, 0), trans = log10_trans()),
+#   levels = c(3, 10)
+#   )
+# param_grid_gb
+#-------------------------------------------------------------------------------
+
+# 4. SVM with RBF kernel
+#param_grid_rbf <- grid_regular(
+# cost(range = c(-8, 5)),
+#  rbf_sigma(range = c(-5, -3)),
+#  levels = c(14, 5)
+#  )
+#param_grid_rbf
+
+# 5. MLP
+#param_grid_mlp <- grid_regular(
+#  hidden_units(range = c(1, 20)),
+#  dropout(range = c(0, 0.6)),
+#  levels = 5
+#  )
+#param_grid_mlp
+```
+
+**Cross-validation**
+```{r, eval = TRUE}
+# Set cross-validation partitions
+set.seed(203)
+folds <- vfold_cv(mimic_other, v = 5)
+folds
+```
+
+```{r, eval = TRUE}
+registerDoParallel(cores = detectCores())
+set.seed(203)
+# Fit 5-fold CV
+## 1. Logistic Regression
+(en_fit <- en_wf |>
+  tune_grid(
+    resamples = folds,
+    grid = param_grid_en,
+    metrics = metric_set(roc_auc, accuracy)
+    )) |>
+  system.time()
+en_fit
+
+## 2. Random Forest
+
+# tune_sim_anneal
+#(rf_fit_ann <- rf_wf |>
+#  tune_sim_anneal(
+#    resamples = folds,  # Assuming `folds` is the resampling object
+#    param_info = params_final,  # Use the finalized parameter set
+#    metrics = metric_set(roc_auc, accuracy),
+#    iter = 5  # Number of iterations, adjust based on computational budget
+#  )) |>
+#  system.time()
+#rf_fit_ann
+
+# tune_bayes
+(rf_fit_bayes <- rf_wf |>
+  tune_bayes(
+    resamples = folds, 
+    param_info = params_bayes_rf,
+    metrics = metric_set(roc_auc, accuracy),
+    initial = 3,
+    iter = 5
+    )) |>
+  system.time()
+rf_fit_bayes
+
+## 3. XGBoost
+# tune_sim_anneal
+#(gb_fit_ann <- gb_wf |>
+#  tune_sim_anneal(
+#    resamples = folds,
+#    param_info = params_bayes_gb,
+#    metrics = metric_set(roc_auc, accuracy),
+#    iter = 5
+#    )) |>
+#  system.time()
+#gb_fit_ann
+
+# tune_bayes
+(gb_fit_bayes <- gb_wf |>
+  tune_bayes(
+    resamples = folds,
+    param_info = params_bayes_gb,
+    metrics = metric_set(roc_auc, accuracy),
+    initial = 3,
+    iter = 5
+    )) |>
+  system.time()
+gb_fit_bayes
+
+# 4. SVM with RBF kernel
+#svm_fit_rbf <- svm_wf_rbf %>%
+#  tune_grid(
+#    resamples = folds,
+#    grid = param_grid_rbf,
+#    metrics = metric_set(roc_auc, accuracy)
+#    )
+#svm_fit_rbf
+
+# 5. MLP
+#(mlp_fit <- mlp_wf |>
+#  tune_grid(
+#    resamples = folds,
+#    grid = param_grid_mlp,
+#    metrics = metric_set(roc_auc, accuracy)
+#    )) |>
+#  system.time()
+```
+
+```{r, eval = TRUE}
+# Visualize CV criterion
+# 1. Logistic Regression
+en_fit |>
+  # aggregate metrics from K folds
+  collect_metrics() |>
+  print(width = Inf) |>
+  filter(.metric == "roc_auc") |>
+  ggplot(mapping = aes(x = penalty, y = mean, color = factor(mixture))) +
+  geom_point() +
+  labs(x = "Penalty", y = "CV AUC") +
+  scale_x_log10()
+
+# 2. Random Forest
+rf_fit_bayes |>
+  collect_metrics() |>
+  print(width = Inf) |>
+  filter(.metric == "roc_auc") |>
+  ggplot(mapping = aes(x = trees, y = mean, color = factor(mtry))) +
+  geom_point() + 
+  # geom_line() + 
+  labs(x = "Num. of Trees", y = "CV AUC")
+
+# 3. XGBoost
+gb_fit_bayes |>
+  collect_metrics() |>
+  print(width = Inf) |>
+  filter(.metric == "roc_auc") |>
+  ggplot(mapping = aes(x = learn_rate, y = mean, color = factor(tree_depth))) +
+  geom_point() +
+  labs(x = "Learning Rate", y = "CV AUC") +
+  scale_x_log10()
+
+# 5. MLP
+#mlp_fit |>
+#  collect_metrics() |>
+#  print(width = Inf) |>
+#  filter(.metric == "roc_auc") |>
+#  ggplot(mapping = aes(x = dropout, y = mean, color = factor(hidden_units))) +
+#  geom_point() +
+#  labs(x = "Dropout Rate", y = "CV AUC") +
+#  scale_x_log10()
+```
+
+**Select the best model**
+```{r, eval = TRUE}
+# 1. Logistic Regression
+en_fit |>
+  show_best("roc_auc")
+
+best_en <- en_fit |>
+  select_best("roc_auc")
+best_en
+
+# 2. Random Forest
+rf_fit_bayes |>
+  show_best("roc_auc")
+
+best_rf <- rf_fit_bayes |>
+  select_best("roc_auc")
+best_rf
+
+# 3. XGBoost
+gb_fit_bayes |>
+  show_best("roc_auc")
+
+best_gb <- gb_fit_bayes |>
+  select_best("roc_auc")
+best_gb
+```
+
+**Finalize the model**
+```{r, eval = TRUE}
+# Final workflow
+# 1. Logistic Regression
+final_en_wf <- en_wf |>
+  finalize_workflow(best_en)
+final_en_wf
+
+# 2. Random Forest
+final_rf_wf <- rf_wf |>
+  finalize_workflow(best_rf)
+final_rf_wf
+
+# 3. XGBoost
+final_gb_wf <- gb_wf |>
+  finalize_workflow(best_gb)
+final_gb_wf
+
+# Fit the whole training set
+# 1. Logistic Regression
+final_en_fit <- 
+  final_en_wf |>
+  last_fit(data_split)
+final_en_fit
+
+# 2. Random Forest
+final_rf_fit <- 
+  final_rf_wf |>
+  last_fit(data_split)
+final_rf_fit
+
+# 3. XGBoost
+final_gb_fit <- 
+  final_gb_wf |>
+  last_fit(data_split)
+final_gb_fit
+
+# Test metrics
+## 1. Logistic Regression
+en_metrics <- final_en_fit |>
+  collect_metrics() |>
+  print()
+
+## 2. Random Forest
+rf_metrics <- final_rf_fit |>
+  collect_metrics() |>
+  print()
+
+## 3. XGBoost
+gb_metrics <- final_gb_fit |>
+  collect_metrics() |>
+  print()
+
+#rm(en_fit, rf_fit_bayes, gb_fit_bayes)
+```
+
+#### 3.2 Model Stacking
+
+**Setting up tuning grid for model stacking** (tune_bayes)
+```{r, eval = TRUE}
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+set.seed(203)
+(en_res <- 
+  tune_grid(
+    object = en_wf, 
+    resamples = folds, 
+    grid = param_grid_en,
+    control = control_stack_grid()
+  )) |>
+  system.time()
+
+(rf_res <-
+  tune_bayes(
+    object = rf_wf, 
+    resamples = folds, 
+    param_info = params_bayes_rf,
+    initial = 3,
+    iter = 3,
+    control = control_stack_bayes()
+  )) |> 
+  system.time()
+
+stopCluster(cl)
+gc()
+```
+
+```{r, eval = TRUE}
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+set.seed(203)
+(gb_res <-
+  tune_bayes(
+    object = gb_wf, 
+    resamples = folds, 
+    param_info = params_bayes_gb,
+    initial = 3,
+    iter = 3,
+    control = control_stack_bayes()
+  )) |> 
+  system.time()
+stopCluster(cl)
+```
+
+**Setting up tuning grid for model stacking** (tune_grid)
+```{r, eval = TRUE}
+if (FALSE) {
+registerDoParallel(cores = detectCores())
+set.seed(203)
+(en_res <- 
+  tune_grid(
+    object = en_wf, 
+    resamples = folds, 
+    grid = param_grid_en,
+    control = control_stack_grid()
+  )) |>
+  system.time()
+
+(rf_res <-
+  tune_grid(
+    object = rf_wf, 
+    resamples = folds, 
+    grid = param_grid_rf,
+    control = control_stack_grid()
+  )) |> 
+  system.time()
+
+(gb_res <-
+  tune_grid(
+    object = gb_wf, 
+    resamples = folds, 
+    grid = param_grid_gb,
+    control = control_stack_grid()
+  )) |> 
+  system.time()
+}
+```
+
+**Build the stacked ensemble**
+```{r, eval = TRUE}
+cl <- makeCluster(detectCores())
+doParallel::registerDoParallel(cl)
+set.seed(203)
+(mimic_model_st <- 
+  # initialize the stack
+  stacks() |>
+  # add candidate members
+  add_candidates(en_res) |>
+  add_candidates(rf_res) |>
+  add_candidates(gb_res) |>
+  # determine how to combine their predictions
+  blend_predictions(
+    penalty = 10^(-3:0),
+    times = 10,
+    metrics = c("roc_auc")
+    ) |>
+  # fit the candidates with nonzero stacking coefficients
+  fit_members()) |>
+  system.time()
+stopCluster(cl)
+gc()
+```
+
+**Check the top results**
+```{r, eval = TRUE}
+autoplot(mimic_model_st, type = "weights")
+collect_parameters(mimic_model_st, "rf_res")
+```
+
+**Model stacking classification**
+```{r, eval = TRUE}
+cl <- makeCluster(detectCores())
+doParallel::registerDoParallel(cl)
+
+mimic_pred_auc <- mimic_test %>%
+  bind_cols(predict(mimic_model_st, ., type = "prob")) %>%
+  print(width = Inf)
+
+mimic_pred_acc <-
+  mimic_test |>
+  select(los_long) |>
+  bind_cols(
+    predict(
+      mimic_model_st,
+      mimic_test,
+      type = "class",
+      members = TRUE
+      )
+    ) |>
+  print(width = Inf)
+stopCluster(cl)
+```
+
+**Metrics for model stacking**
+```{r, eval = TRUE}
+st_auc <- yardstick::roc_auc(
+  mimic_pred_auc,
+  truth = los_long,
+  contains(".pred_FALSE")
+  )
+
+st_acc <- yardstick::accuracy(
+  mimic_pred_acc,
+  truth = los_long,
+  estimate = .pred_class
+  )
+
+st_metrics <- bind_rows(st_acc, st_auc) |>
+  print()
+```
+
+**Final Results**
+```{r, eval = TRUE}
+results <- tibble(
+  Model = c("Logistic Regression", "Random Forest", 
+            "XGBoost", "Model Stacking"),
+  Accuracy = c(en_metrics$.estimate[1],
+               rf_metrics$.estimate[1], 
+               gb_metrics$.estimate[1],
+               st_metrics$.estimate[1]),
+  ROC_AUC = c(en_metrics$.estimate[2],
+              rf_metrics$.estimate[2],
+              gb_metrics$.estimate[2],
+              st_metrics$.estimate[2]),
+) |>
+  print()
+```
+
+**Predictor Importance in Predicting `los_long`**
+```{r, eval = TRUE}
+library(rpart.plot)
+library(vip)
+
+## 1. Logistic Regression
+ importance_en <- extract_workflow(final_en_fit) |>
+  extract_fit_parsnip() |>
+  vip(num_features = 38) |>
+  print()
+
+## 2. Random Forest
+importance_rf <- extract_workflow(final_rf_fit) |>
+  extract_fit_parsnip() |>
+  vip(num_features = 23) |>
+  print()
+
+## 3. XGBoost
+importance_gb <- extract_workflow(final_gb_fit) |>
+  extract_fit_parsnip() |>
+  vip(num_features = 38) |>
+  print()
+```
+
+4. Compare model classification performance on the test set. Report both the area under ROC curve and accuracy for each machine learning algorithm and the model stacking. Interpret the results. What are the most important features in predicting long ICU stays? How do the models compare in terms of performance and interpretability?
+
+### 4. Answer:
+
+```{r, eval = TRUE}
+results
+importance_en
+importance_rf
+importance_gb
+```
+
+1. Final Results
+
+    - As we can see from the table above, `Model Stacking` has the highest `accuracy` (0.617) and `ROC_AUC` (0.661) among all 4 models. `XGBoost` comes second with an `accuracy` of 0.614 and `ROC_AUC` of 0.656 which are pretty close to the results of the `Model Stacking`. `Random Forest` comes third with an `accuracy` of 0.606 and `ROC_AUC` of 0.646. `Logistic Regression` comes last with an `accuracy` of 0.581 and `ROC_AUC` of 0.611, which is not a satisfactory result as it did not show an obvious improvement compared to the baseline model.
+
+2. Feature-importance
+
+    - From the plot we can see that basically, the most important features in predicting long ICU stays are the lab measurements, vital signs, age, admission location, and first care unit.
+    
+    - Lab measurements and vital signs: These features are relatively more important as they can directly show the patient's health status and the severity of the disease, which can be crucial for predicting the length of ICU stay.
+    
+    - Age: Age is also an important feature, as older patients are more likely to have a longer ICU stay.
+    
+    - Admission location/type: These features are also important. For instance, A patient with an admission location **TRANSFER FROM HOSPITAL** is more likely to have a longer ICU stay since the patient could have been transferred from another hospital due to the severity of the disease. On the other hand, a patient with an admission type **SURGICAL SAME DAY ADMISSION** is more likely to have a longer ICU stay since the patient might need a longer time to recover from the surgery. 
+    
+    - First care unit: A patient might have longer ICU stay if he/she is first admitted to the **SICU** (Surgical ICU) or **MICU** (Medical ICU) compared to other care units.
+    
+    - Intime night: This feature is created based on the time the patient was transferred into the ICU. If the patient was transferred to the ICU between 12am and 6am, the patient is more likely to have a more severe condition, which can lead to a longer ICU stay.
+    
+    
+3. Interpretation and Models Comparison
+
+    - `Model Stacking` combines the predictions of multiple models, potentially leading to a more robust and generalized model. This approach can leverage the unique strengths of each base model, leading to improved performance. As a result, unsurprisingly, `Model Stacking` outperforms all other models in terms of `accuracy` and `ROC_AUC`.
+
+    - In `mimiciv_icu_cohort`, interactions between variables (e.g., between different lab measurements or vital signs) can be crucial for prediction. Tree-based models like `Random Forest` and `XGBoost` are well suited to capture these interactions. `XGBoost` showed a better performance over `Random Forest`, probably due to its ability to capture non-linear relationships and interactions between variables more effectively. Also, `XGBoost` is less prone to overfitting compared to `Random Forest` since it builds trees sequentially and learns from previous trees slowly.
+    
+    - `Logistic Regression` is a simple and interpretable model, but it may not be able to capture complex relationships between variables. As a result, it showed a relatively poor performance compared to other ensemble models (**homogeneous:** `Random Forest` and `XGBoost`. **heterogeneous:** `Stacking`). However, it is more interpretable and easier to understand compared to other models. For instance, we can easily interpret the coefficients of the model as: "For one-unit increase in `creatinine`, the logarithm of odds of having a long ICU stay increases by $\beta_{creatinine}$ units, holding all other variables constant."  Whereas other models do not provide such interpretability.
+
+
+
+
+
+
+
+
+
+
